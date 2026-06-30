@@ -1,0 +1,186 @@
+:root {
+  --bg-0: #0a0613;
+  --bg-1: #120a22;
+  --card-bg: #150c26;
+  --border: #2c1a4a;
+  --purple-1: #7c3aed;
+  --purple-2: #a855f7;
+  --purple-glow: #9333ea;
+  --text-main: #f3eaff;
+  --text-dim: #9b8fb8;
+  --star: #ffd75e;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg-0);
+  color: var(--text-main);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+.app {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(124, 58, 237, 0.25), transparent 55%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+}
+
+.glow {
+  position: absolute;
+  width: 360px;
+  height: 360px;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--purple-glow) 0%, transparent 70%);
+  opacity: 0.35;
+  filter: blur(10px);
+  pointer-events: none;
+}
+
+.card {
+  position: relative;
+  width: 100%;
+  max-width: 360px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, #100820 100%);
+  border: 1px solid var(--border);
+  border-radius: 24px;
+  padding: 32px 24px 28px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(124, 58, 237, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--purple-2);
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.35);
+  padding: 5px 10px;
+  border-radius: 100px;
+  margin-bottom: 20px;
+}
+
+.art {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.art-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--purple-1), var(--purple-2), #4c1d95, var(--purple-1));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 3px));
+  animation: spin 6s linear infinite;
+}
+
+.art-core {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(160deg, #1d1033, #0c0716);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--purple-2);
+  text-shadow: 0 0 18px rgba(168, 85, 247, 0.7);
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--text-dim);
+  margin-bottom: 22px;
+  line-height: 1.4;
+}
+
+.price-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 22px;
+}
+
+.price-star {
+  color: var(--star);
+  font-size: 18px;
+}
+
+.price-value {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.buy-btn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 15px 18px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--purple-1), #5b21b6);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.45);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.buy-btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.35);
+}
+
+.buy-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.status {
+  min-height: 18px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.status.success { color: #4ade80; }
+.status.error { color: #f87171; }
