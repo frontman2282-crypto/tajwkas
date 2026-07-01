@@ -1,36 +1,3 @@
-"""
-Бот на aiogram + создание инвойса звёздами (Telegram Stars, валюта XTR)
-для товара "dystopia" за 1 звезду.
-
-Что делает этот файл:
-1. Поднимает обычного aiogram-бота (long polling), который умеет
-   принимать pre_checkout_query и successful_payment.
-2. Поднимает рядом aiohttp веб-сервер с маршрутами:
-   - POST /create_invoice — дёргает script.js, чтобы получить ссылку
-     на инвойс и открыть нативное окно оплаты через tg.openInvoice().
-   - POST /open_case — выдаёт бесплатный одноразовый промокод
-     (Kichiro-XXXXX) со случайной скидкой (5/15/30/50%, вес выпадения
-     80:25:5:3).
-   - GET  /validate_promo?code=... — проверяет промокод (статический
-     или кейсовый) на экране оформления, до создания инвойса.
-
-Установка зависимостей (aiogram у тебя уже есть):
-    pip install aiohttp aiohttp-cors
-
-Запуск:
-    python bot.py
-
-Важно:
-- Для оплаты звёздами provider_token в send_invoice / create_invoice_link
-  должен быть пустой строкой "", а currency = "XTR".
-- prices указываются в LabeledPrice, amount — это просто целое число звёзд
-  (без умножения
-  на 100, как в обычных валютах — у звёзд множитель 1).
-- Мини-апп (index.html/style.css/script.js) должен быть захостен на
-  HTTPS-домене (например, GitHub Pages, Vercel, или твой же сервер) и
-  подключён в @BotFather через /newapp или как Menu Button.
-"""
-
 import asyncio
 import json
 import logging
@@ -69,7 +36,7 @@ PRODUCTS = {
             "Это система уникальных возможностей, расширенного функционала "
             "и особого статуса, который выделяет тебя среди остальных игроков."
         ),
-        "price": 150,
+        "price": 2,
     }
 }
 
@@ -77,9 +44,9 @@ PRODUCTS = {
 # Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
 # именно они прилетают в payload инвойса и в successful_payment.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 150},
-    "30d": {"label": "30 дней", "price": 400},
-    "12m": {"label": "12 месяцев", "price": 3000},
+    "7d": {"label": "7 дней", "price": 2},
+    "30d": {"label": "30 дней", "price": 2},
+    "12m": {"label": "12 месяцев", "price": 2},
 }
 
 # ====== Промокоды ======
