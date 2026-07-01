@@ -6,7 +6,7 @@ const PRODUCTS = [
     id: "dystopia",
     title: "Dystopia",
     subtitle: "Доступ к закрытой коллекции",
-    price: 150,
+    price: 1,
     initial: "D",
     badges: ["UNDETECTED"],
   },
@@ -14,9 +14,9 @@ const PRODUCTS = [
 
 // Сроки доступа — должны совпадать с DURATIONS в bot.py
 const DURATIONS = [
-  { code: "1w", label: "1 неделя", price: 150 },
-  { code: "1m", label: "1 месяц", price: 150 },
-  { code: "1y", label: "1 год", price: 150 },
+  { code: "1w", label: "1 неделя", price: 1 },
+  { code: "1m", label: "1 месяц", price: 1 },
+  { code: "1y", label: "1 год", price: 1 },
 ];
 
 // Иконка звезды (Telegram Stars) — используется вместо символа "★",
@@ -53,6 +53,7 @@ function hideSplash() {
   setTimeout(() => {
     splash.classList.add("splash--hidden");
     app.classList.add("app--ready");
+    initApp();
   }, 180);
 }
 
@@ -96,10 +97,11 @@ const durationTemplate = document.getElementById("durationOptionTemplate");
 function renderProducts() {
   productList.innerHTML = "";
 
-  PRODUCTS.forEach((product) => {
+  PRODUCTS.forEach((product, index) => {
     const node = cardTemplate.content.cloneNode(true);
     const card = node.querySelector(".card");
     card.dataset.productId = product.id;
+    card.style.setProperty("--card-index", index);
 
     const row = node.querySelector(".card-row");
     const badgesEl = node.querySelector(".card-row-badges");
@@ -377,6 +379,15 @@ async function refreshProfile() {
 }
 
 // ====== Инициализация ======
-renderProducts();
-fillProfileFromTelegram();
-refreshProfile();
+// Рендерим карточки и профиль только когда сплэш реально скрывается —
+// так плавное появление карточек видно пользователю, а не "съедается"
+// временем, пока крутится экран загрузки.
+let appInitialized = false;
+
+function initApp() {
+  if (appInitialized) return;
+  appInitialized = true;
+  renderProducts();
+  fillProfileFromTelegram();
+  refreshProfile();
+}
