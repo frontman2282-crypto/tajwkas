@@ -32,6 +32,7 @@
 """
 
 import asyncio
+import json
 import logging
 import random
 import string
@@ -91,9 +92,10 @@ PROMO_CODES = {
 
 # ====== Промокоды из кейса ======
 # Кейс выдаёт одноразовый промокод формата "Kichiro-XXXXX" (5 случайных
-# букв/цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса выпадения, а не проценты
-# от 100: с ними скидка 5% выпадает намного чаще, чем 50%, в пропорции
-# 80 : 25 : 5 : 3 (как и просили). Поменяй числа, если нужны другие шансы.
+# букв, в любом регистре, без цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса
+# выпадения, а не проценты от 100: с ними скидка 5% выпадает намного чаще,
+# чем 50%, в пропорции 80 : 25 : 5 : 3 (как и просили). Поменяй числа,
+# если нужны другие шансы.
 CASE_PRIZES = [
     (5, 80),
     (15, 25),
@@ -108,9 +110,36 @@ CASE_IS_FREE = True
 
 # Хранилище сгенерированных кейсом промокодов: КОД (в верхнем регистре) ->
 # {"code": оригинальное написание, "discount_percent": int, "used": bool}.
-# Как и счётчики ниже — это память процесса, обнуляется при рестарте.
-# Для постоянного хранения в будущем стоит подключить БД.
-GENERATED_PROMOS: dict[str, dict] = {}
+#
+# ВАЖНО: раньше это была чистая память процесса, которая обнулялась при
+# каждом рестарте сервера (в т.ч. на бесплатных тарифах хостингов, которые
+# "засыпают" и перезапускаются при простое). Из-за этого промокод мог
+# успешно провалидироваться в один момент, а через какое-то время (после
+# незаметного рестарта) сервер уже "не знал" о нём — именно это выглядело
+# как баг "промокод сработал, а потом вдруг не найден". Теперь состояние
+# сохраняется в JSON-файл рядом со скриптом и переживает рестарты процесса.
+# Для боевого использования всё равно лучше подключить нормальную БД —
+# файл не защищён от одновременной записи из нескольких процессов.
+PROMO_STORE_PATH = os.environ.get("PROMO_STORE_PATH", "generated_promos.json")
+
+
+def _load_generated_promos() -> dict[str, dict]:
+    try:
+        with open(PROMO_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_generated_promos() -> None:
+    try:
+        with open(PROMO_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(GENERATED_PROMOS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", PROMO_STORE_PATH)
+
+
+GENERATED_PROMOS: dict[str, dict] = _load_generated_promos()
 
 
 def roll_case_prize() -> int:
@@ -121,9 +150,10 @@ def roll_case_prize() -> int:
 
 
 def generate_case_code() -> str:
-    """Генерирует уникальный код вида Kichiro-XXXXX и резервирует его."""
+    """Генерирует уникальный код вида Kichiro-XXXXX (5 случайных букв,
+    без цифр) и резервирует его."""
     while True:
-        suffix = "".join(random.choices(string.ascii_uppercase + string.digits, k=5))
+        suffix = "".join(random.choices(string.ascii_letters, k=5))
         code = f"Kichiro-{suffix}"
         if code.upper() not in GENERATED_PROMOS:
             return code
@@ -215,6 +245,7 @@ async def successful_payment_handler(message: Message):
     # теперь, когда оплата реально прошла (а не просто была создана ссылка).
     if promo_key and promo_key in GENERATED_PROMOS:
         GENERATED_PROMOS[promo_key]["used"] = True
+        _save_generated_promos()
 
     # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
@@ -304,6 +335,7 @@ async def open_case_handler(request: web.Request) -> web.Response:
         "discount_percent": discount_percent,
         "used": False,
     }
+    _save_generated_promos()
 
     return web.json_response({
         "code": code,
@@ -364,8 +396,26 @@ async def index_handler(request: web.Request) -> web.Response:
     return web.FileResponse("static/index.html")
 
 
+@web.middleware
+async def no_cache_static_middleware(request: web.Request, handler):
+    """Запрещает кешировать script.js/style.css/index.html.
+
+    Telegram Mini App живёт внутри WebView, который умеет агрессивно
+    кешировать статику по URL. Если после деплоя обновлённого кода клиент
+    получает из кеша старую версию JS/CSS (а HTML — уже новую, или
+    наоборот), интерфейс может выглядеть "битым" при повторном открытии —
+    именно это похоже на баг "открывается через раз". Явно запрещаем кеш
+    для этих файлов, чтобы каждое открытие мини-аппа гарантированно тянуло
+    актуальную версию.
+    """
+    response = await handler(request)
+    if request.path in ("/", "/index.html", "/script.js", "/style.css"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return response
+
+
 def build_web_app() -> web.Application:
-    app = web.Application()
+    app = web.Application(middlewares=[no_cache_static_middleware])
     app.router.add_post("/create_invoice", create_invoice_handler)
     app.router.add_post("/open_case", open_case_handler)
     app.router.add_get("/validate_promo", validate_promo_handler)
