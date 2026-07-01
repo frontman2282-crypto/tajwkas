@@ -58,7 +58,7 @@ PRODUCTS = {
     "dystopia": {
         "title": "Dystopia",
         "description": "Цифровой доступ к закрытой коллекции",
-        "price": 1,
+        "price": 2,
     }
 }
 
@@ -66,10 +66,38 @@ PRODUCTS = {
 # но при желании можно задать разную цену — просто поменяй значения price ниже
 # и в create_invoice_handler бери цену из DURATIONS вместо PRODUCTS.
 DURATIONS = {
-    "1w": {"label": "1 неделя", "price": 1},
-    "1m": {"label": "1 месяц", "price": 1},
-    "1y": {"label": "1 год", "price": 1},
+    "1w": {"label": "1 неделя", "price": 2},
+    "1m": {"label": "1 месяц", "price": 2},
+    "1y": {"label": "1 год", "price": 2},
 }
+
+# ====== Промокоды ======
+# Ключ — код промокода в нижнем регистре (сравнение регистронезависимое).
+# discount_percent — скидка в процентах от цены.
+# Чтобы добавить новый промокод, просто добавь ещё одну запись сюда.
+PROMO_CODES = {
+    "idea67": {"discount_percent": 50},
+}
+
+
+def apply_promo(base_price: int, promo_code: str | None) -> tuple[int, dict | None]:
+    """Считает итоговую цену в звёздах с учётом промокода.
+
+    Возвращает (итоговая_цена, данные_промокода_или_None).
+    Цена в Stars — это целое число, поэтому скидка округляется,
+    а итоговая цена никогда не опускается ниже 1 звезды.
+    """
+    if not promo_code:
+        return base_price, None
+
+    promo = PROMO_CODES.get(promo_code.strip().lower())
+    if not promo:
+        return base_price, None
+
+    discount = promo["discount_percent"]
+    final_price = round(base_price * (1 - discount / 100))
+    final_price = max(1, final_price)
+    return final_price, promo
 
 # Счётчик покупок на пользователя (для вкладки "Профиль" в мини-аппе).
 # ВАЖНО: это простое хранилище в памяти процесса — оно обнуляется при
@@ -138,6 +166,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
 
     product_id = data.get("product_id")
     duration_code = data.get("duration", "1m")
+    promo_code_raw = data.get("promo_code")
 
     product = PRODUCTS.get(product_id)
     duration = DURATIONS.get(duration_code)
@@ -147,8 +176,24 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     if not duration:
         return web.json_response({"error": "unknown duration"}, status=404)
 
+    # ВАЖНО: цену считаем только на бэкенде, по своей таблице цен и
+    # промокодов. Клиенту нельзя доверять — он не присылает готовую цену,
+    # только код промокода, а сумма всегда пересчитывается здесь.
+    base_price = duration["price"]
+    final_price, promo = apply_promo(base_price, promo_code_raw)
+
+    promo_applied = promo is not None
+    # Если промокод был передан, но не найден — сообщаем об этом клиенту,
+    # но всё равно создаём инвойс по полной цене, чтобы не блокировать покупку.
+    promo_invalid = bool(promo_code_raw) and not promo_applied
+
     title = product["title"]
     description = f"{product['description']} — доступ на {duration['label']}"
+    if promo_applied:
+        description += f" (промокод -{promo['discount_percent']}%)"
+
+    # payload хранит только id товара и срок — промокод в payload не кладём,
+    # т.к. на скидку уже никак не влияет после создания инвойса.
     payload = f"{product_id}:{duration_code}"  # вернётся в successful_payment.invoice_payload
 
     invoice_link = await bot.create_invoice_link(
@@ -157,10 +202,17 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         payload=payload,
         provider_token="",           # для звёзд (XTR) всегда пустая строка
         currency="XTR",
-        prices=[LabeledPrice(label=title, amount=duration["price"])],
+        prices=[LabeledPrice(label=title, amount=final_price)],
     )
 
-    return web.json_response({"invoice_link": invoice_link})
+    return web.json_response({
+        "invoice_link": invoice_link,
+        "base_price": base_price,
+        "final_price": final_price,
+        "promo_applied": promo_applied,
+        "promo_invalid": promo_invalid,
+        "discount_percent": promo["discount_percent"] if promo_applied else 0,
+    })
 
 
 async def profile_handler(request: web.Request) -> web.Response:
