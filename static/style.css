@@ -907,6 +907,56 @@ body.keyboard-open .tabbar {
 
 /* ============ ЭКРАН "МОИ ПРОМОКОДЫ" ============ */
 
+.promo-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.promo-select-mode-btn,
+.promo-cancel-select-btn,
+.promo-delete-all-btn,
+.promo-delete-selected-btn {
+  padding: 9px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.promo-select-mode-btn:active,
+.promo-cancel-select-btn:active,
+.promo-delete-all-btn:active,
+.promo-delete-selected-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-delete-all-btn {
+  margin-left: auto;
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .promo-list {
   display: flex;
   flex-direction: column;
@@ -924,6 +974,46 @@ body.keyboard-open .tabbar {
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.04);
   animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
   animation-delay: calc(var(--promo-index, 0) * 60ms + 60ms);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list-item--selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--card-bg-2) 100%);
+}
+
+.promo-list-item-checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  border: 2px solid var(--border);
+  background: var(--card-bg-2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list--selecting .promo-list-item-checkbox {
+  display: inline-flex;
+}
+
+.promo-list-item-checkbox:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.promo-list-item-checkbox:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px, -1px);
 }
 
 .promo-list-item-badge {
@@ -1411,6 +1501,121 @@ body.keyboard-open .tabbar {
 
 .case-status.success { color: #4ade80; }
 .case-status.error { color: #f87171; }
+
+/* ============ МИНИ-МЕНЮ С ПРОМОКОДОМ (после открытия кейса) ============ */
+
+.case-prize-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.case-prize-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+@keyframes case-prize-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.case-prize-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes case-prize-card-in {
+  from { opacity: 0; transform: scale(0.88) translateY(14px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.case-prize-modal-badge {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  padding: 5px 18px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--silver-1), var(--silver-2));
+  color: #131316;
+}
+
+.case-prize-modal-badge.case-result-badge--common { background: linear-gradient(135deg, #b6b6bf, #8d8d95); color: #131316; }
+.case-prize-modal-badge.case-result-badge--uncommon { background: linear-gradient(135deg, #7be3a0, #22c55e); color: #08240f; }
+.case-prize-modal-badge.case-result-badge--rare { background: linear-gradient(135deg, #6ec3ff, #3b82f6); color: #0b1730; }
+.case-prize-modal-badge.case-result-badge--epic { background: linear-gradient(135deg, #b892ff, var(--accent)); color: #1a1230; }
+.case-prize-modal-badge.case-result-badge--legendary {
+  background: linear-gradient(135deg, #ffe08a, #f5a623);
+  color: #3a2400;
+  box-shadow: 0 0 18px rgba(245, 166, 35, 0.5);
+}
+
+.case-prize-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.case-prize-modal-code {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--card-bg-2);
+}
+
+.case-prize-modal-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.case-prize-modal-ok {
+  width: 100%;
+  margin-top: 6px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, #9285f5, var(--accent));
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 24px rgba(124, 108, 240, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.case-prize-modal-ok:active {
+  transform: scale(0.97);
+}
 
 /* ============ CHECKOUT VIEW ============ */
 
