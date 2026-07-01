@@ -7,7 +7,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <!-- Версия в query-параметре (?v=...) специально нужна, чтобы Telegram
+       WebView не подсовывал закешированную старую копию style.css/script.js
+       при повторном открытии мини-аппа. Без этого при обновлении файлов на
+       сервере интерфейс мог "через раз" открываться в неконсистентном виде
+       (например, разметка есть, а стили/скрипт — от старой версии или не
+       успели прогрузиться). При каждом деплое меняй значение v=. -->
+  <link rel="stylesheet" href="style.css?v=2">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -186,6 +192,6 @@
     </button>
   </template>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=2"></script>
 </body>
 </html>
