@@ -119,19 +119,26 @@
       <p class="card-status" id="checkoutStatus"></p>
     </section>
 
-    <!-- ===== Нижняя навигация ===== -->
-    <nav class="tabbar">
-      <button class="tab tab--active" data-view="shop">
-        <span class="tab-icon">◆</span>
-        <span class="tab-label">Магазин</span>
-      </button>
-      <button class="tab" data-view="profile">
-        <span class="tab-icon">●</span>
-        <span class="tab-label">Профиль</span>
-      </button>
-    </nav>
-
   </div>
+
+  <!-- ===== Нижняя навигация ======
+       Таббар специально вынесен ЗА пределы #app: у #app есть CSS-анимация
+       через transform (появление приложения), а transform на предке
+       превращает position:fixed у потомков в "fixed относительно предка"
+       вместо "fixed относительно экрана". Из-за этого таббар ездил вместе
+       со скроллом/изменением высоты #app. Здесь же, будучи прямым
+       потомком body (у которого transform нет), он честно прибит к низу
+       экрана и никуда не двигается. -->
+  <nav class="tabbar">
+    <button class="tab tab--active" data-view="shop">
+      <span class="tab-icon">◆</span>
+      <span class="tab-label">Магазин</span>
+    </button>
+    <button class="tab" data-view="profile">
+      <span class="tab-icon">●</span>
+      <span class="tab-label">Профиль</span>
+    </button>
+  </nav>
 
   <!-- Шаблон карточки товара -->
   <template id="productCardTemplate">
