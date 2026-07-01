@@ -915,6 +915,10 @@ body.keyboard-open .tabbar {
   flex-wrap: wrap;
 }
 
+.promo-list-actions[hidden] {
+  display: none;
+}
+
 .promo-select-mode-btn,
 .promo-cancel-select-btn,
 .promo-delete-all-btn,
@@ -1401,6 +1405,10 @@ body.keyboard-open .tabbar {
   animation: case-result-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.case-result[hidden] {
+  display: none;
+}
+
 @keyframes case-result-in {
   from { opacity: 0; transform: scale(0.92) translateY(6px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
@@ -1477,6 +1485,10 @@ body.keyboard-open .tabbar {
   transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
 }
 
+.case-again-btn[hidden] {
+  display: none;
+}
+
 .case-again-btn svg {
   width: 16px;
   height: 16px;
@@ -1512,6 +1524,14 @@ body.keyboard-open .tabbar {
   align-items: center;
   justify-content: center;
   padding: 24px;
+}
+
+/* Класс задаёт display:flex, а это правило автора перебивает встроенный
+   UA-стиль "[hidden] { display: none }" по каскаду (author > UA),
+   поэтому модалка иначе оставалась видимой даже с атрибутом hidden —
+   явно возвращаем display:none, когда hidden установлен. */
+.case-prize-modal[hidden] {
+  display: none;
 }
 
 .case-prize-modal-backdrop {
