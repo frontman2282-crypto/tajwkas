@@ -93,6 +93,15 @@
       </div>
 
       <div class="option-group">
+        <span class="option-group-label">Промокод</span>
+        <div class="promo-row">
+          <input type="text" id="checkoutPromoInput" class="promo-input" placeholder="Введите промокод" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <button class="promo-apply-btn" id="checkoutPromoApply" type="button">Применить</button>
+        </div>
+        <p class="promo-status" id="checkoutPromoStatus"></p>
+      </div>
+
+      <div class="option-group">
         <span class="option-group-label">Способ оплаты</span>
         <div class="payment-options">
           <div class="payment-option payment-option--selected">
@@ -104,6 +113,7 @@
       </div>
 
       <button class="buy-btn" id="checkoutBuyBtn">
+        <span class="buy-btn-old-price" id="checkoutOldPrice" hidden></span>
         <span class="buy-btn-text" id="checkoutBuyText">Купить</span>
       </button>
       <p class="card-status" id="checkoutStatus"></p>
