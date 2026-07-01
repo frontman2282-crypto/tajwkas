@@ -612,6 +612,7 @@ function rarityClassFor(discountPercent) {
   if (discountPercent >= 50) return "case-result-badge--legendary";
   if (discountPercent >= 30) return "case-result-badge--epic";
   if (discountPercent >= 15) return "case-result-badge--rare";
+  if (discountPercent >= 10) return "case-result-badge--uncommon";
   return "case-result-badge--common";
 }
 
