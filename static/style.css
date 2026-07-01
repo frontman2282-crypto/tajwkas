@@ -946,7 +946,7 @@ body.keyboard-open .tabbar {
   margin-bottom: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
   opacity: 0;
-  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .view--checkout .option-group {
@@ -958,9 +958,15 @@ body.keyboard-open .tabbar {
   animation: rise-in-transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-.view--checkout .option-group:nth-of-type(1) { animation-delay: 0.12s; }
-.view--checkout .option-group:nth-of-type(2) { animation-delay: 0.19s; }
-.view--checkout .buy-btn { animation-delay: 0.26s; }
+/* Задержки каскада (animation-delay) для .checkout-hero, .description-card,
+   .option-group и .buy-btn теперь выставляются из script.js (см.
+   checkoutAnimatedEls в openCheckout) — это и надёжнее (гарантированный
+   рестарт анимации при каждом открытии экрана), и корректнее по
+   индексам: раньше здесь были :nth-of-type(1)/(2) селекторы, которые на
+   самом деле не совпадали ни с одним .option-group (nth-of-type считает
+   позицию среди ВСЕХ div-соседей, а не среди элементов с классом
+   .option-group — первые два div-а перед тарифами это .checkout-hero и
+   .description-card), поэтому каскад задержек фактически не работал. */
 
 @keyframes rise-in {
   from { opacity: 0; transform: translateY(10px); }
@@ -1012,7 +1018,7 @@ body.keyboard-open .tabbar {
   padding: 18px 20px;
   margin-bottom: 10px;
   opacity: 0;
-  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.08s forwards;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .description-card-label {
