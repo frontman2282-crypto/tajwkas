@@ -6,7 +6,7 @@
   <title>Dystopia Shop</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -16,8 +16,12 @@
   <div id="splash" class="splash">
     <div class="splash-mark">
       <div class="splash-ring"></div>
-      <div class="splash-core">D</div>
     </div>
+    <div class="splash-label">
+      <span>Загрузка</span>
+      <span class="splash-dots"><i></i><i></i><i></i></span>
+    </div>
+    <div class="splash-bar"><div class="splash-bar-fill" id="splashBarFill"></div></div>
   </div>
 
   <div id="app" class="app">
@@ -47,7 +51,9 @@
       <div class="profile-card">
         <div class="profile-avatar-wrap">
           <img id="profileAvatar" class="profile-avatar" alt="Аватар" src="" hidden>
-          <div id="profileAvatarFallback" class="profile-avatar profile-avatar--fallback">?</div>
+          <div id="profileAvatarFallback" class="profile-avatar profile-avatar--fallback">
+            <span id="profileAvatarLetter">?</span>
+          </div>
         </div>
         <div class="profile-name" id="profileName">—</div>
         <div class="profile-username" id="profileUsername">@—</div>
@@ -59,6 +65,48 @@
           <span class="stats-value" id="profilePurchases">0</span>
         </div>
       </div>
+    </section>
+
+    <!-- ===== Экран: ОФОРМЛЕНИЕ ПОКУПКИ ===== -->
+    <section id="view-checkout" class="view view--checkout">
+      <header class="checkout-topbar">
+        <button class="back-btn" id="checkoutBack" type="button" aria-label="Назад">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div>
+          <span class="topbar-eyebrow">Оформление</span>
+          <h1 class="topbar-title" id="checkoutTitle">—</h1>
+        </div>
+      </header>
+
+      <div class="checkout-hero">
+        <div class="checkout-hero-icon"><span id="checkoutInitial"></span></div>
+        <div class="checkout-hero-info">
+          <div class="checkout-hero-badges" id="checkoutBadges"></div>
+          <p class="checkout-hero-subtitle" id="checkoutSubtitle"></p>
+        </div>
+      </div>
+
+      <div class="option-group">
+        <span class="option-group-label">Срок доступа</span>
+        <div class="duration-options" id="checkoutDurations"></div>
+      </div>
+
+      <div class="option-group">
+        <span class="option-group-label">Способ оплаты</span>
+        <div class="payment-options">
+          <div class="payment-option payment-option--selected">
+            <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7.1-6.3-3.9-6.3 3.9 1.7-7.1-5.5-4.7 7.2-.6z"/></svg>
+            <span class="payment-option-label">Telegram Stars</span>
+            <span class="payment-option-check">✓</span>
+          </div>
+        </div>
+      </div>
+
+      <button class="buy-btn" id="checkoutBuyBtn">
+        <span class="buy-btn-text" id="checkoutBuyText">Купить</span>
+      </button>
+      <p class="card-status" id="checkoutStatus"></p>
     </section>
 
     <!-- ===== Нижняя навигация ===== -->
@@ -78,22 +126,30 @@
   <!-- Шаблон карточки товара -->
   <template id="productCardTemplate">
     <article class="card">
-      <div class="card-badges"></div>
-      <div class="art">
-        <div class="art-ring"></div>
-        <div class="art-core"></div>
-      </div>
-      <h2 class="card-title"></h2>
-      <p class="card-subtitle"></p>
-      <div class="price-row">
-        <span class="price-star">★</span>
-        <span class="price-value"></span>
-      </div>
-      <button class="buy-btn">
-        <span class="buy-btn-text">Купить</span>
+      <button class="card-row" type="button">
+        <div class="card-row-icon"><span class="card-row-initial"></span></div>
+        <div class="card-row-info">
+          <h2 class="card-row-title"></h2>
+          <div class="card-row-meta">
+            <div class="card-row-badges"></div>
+            <p class="card-row-subtitle"></p>
+          </div>
+        </div>
+        <div class="card-row-price">
+          <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7.1-6.3-3.9-6.3 3.9 1.7-7.1-5.5-4.7 7.2-.6z"/></svg>
+          <span class="price-value"></span>
+        </div>
+        <span class="card-row-chevron">›</span>
       </button>
-      <p class="card-status"></p>
     </article>
+  </template>
+
+  <!-- Шаблон опции срока доступа -->
+  <template id="durationOptionTemplate">
+    <button class="duration-option" type="button">
+      <span class="duration-option-label"></span>
+      <span class="duration-option-price"></span>
+    </button>
   </template>
 
   <script src="script.js"></script>
