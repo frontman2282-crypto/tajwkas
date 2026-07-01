@@ -3,39 +3,98 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Dystopia</title>
+  <title>Dystopia Shop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
-  <div class="app">
 
-    <div class="glow"></div>
+  <!-- Экран плавной загрузки -->
+  <div id="splash" class="splash">
+    <div class="splash-mark">
+      <div class="splash-ring"></div>
+      <div class="splash-core">D</div>
+    </div>
+  </div>
 
-    <main class="card">
-      <div class="badge">★ ТОВАР</div>
+  <div id="app" class="app">
 
-      <div class="art">
-        <div class="art-ring"></div>
-        <div class="art-core">D</div>
+    <div class="bg-glow bg-glow--top"></div>
+    <div class="bg-glow bg-glow--bottom"></div>
+
+    <!-- ===== Экран: МАГАЗИН ===== -->
+    <section id="view-shop" class="view view--active">
+      <header class="topbar">
+        <span class="topbar-eyebrow">Каталог</span>
+        <h1 class="topbar-title">Магазин</h1>
+      </header>
+
+      <div id="productList" class="product-grid">
+        <!-- Карточки товаров рендерятся из script.js -->
+      </div>
+    </section>
+
+    <!-- ===== Экран: ПРОФИЛЬ ===== -->
+    <section id="view-profile" class="view">
+      <header class="topbar">
+        <span class="topbar-eyebrow">Аккаунт</span>
+        <h1 class="topbar-title">Профиль</h1>
+      </header>
+
+      <div class="profile-card">
+        <div class="profile-avatar-wrap">
+          <img id="profileAvatar" class="profile-avatar" alt="Аватар" src="" hidden>
+          <div id="profileAvatarFallback" class="profile-avatar profile-avatar--fallback">?</div>
+        </div>
+        <div class="profile-name" id="profileName">—</div>
+        <div class="profile-username" id="profileUsername">@—</div>
       </div>
 
-      <h1 class="title">Dystopia</h1>
-      <p class="subtitle">Цифровой доступ к закрытой коллекции</p>
-
-      <div class="price-row">
-        <span class="price-star">★</span>
-        <span class="price-value">150</span>
+      <div class="stats-card">
+        <div class="stats-row">
+          <span class="stats-label">Покупок сделано</span>
+          <span class="stats-value" id="profilePurchases">0</span>
+        </div>
       </div>
+    </section>
 
-      <button id="buyBtn" class="buy-btn">
-        <span id="buyBtnText">Купить за 150 ★</span>
+    <!-- ===== Нижняя навигация ===== -->
+    <nav class="tabbar">
+      <button class="tab tab--active" data-view="shop">
+        <span class="tab-icon">◆</span>
+        <span class="tab-label">Магазин</span>
       </button>
-
-      <p id="status" class="status"></p>
-    </main>
+      <button class="tab" data-view="profile">
+        <span class="tab-icon">●</span>
+        <span class="tab-label">Профиль</span>
+      </button>
+    </nav>
 
   </div>
+
+  <!-- Шаблон карточки товара -->
+  <template id="productCardTemplate">
+    <article class="card">
+      <div class="card-badges"></div>
+      <div class="art">
+        <div class="art-ring"></div>
+        <div class="art-core"></div>
+      </div>
+      <h2 class="card-title"></h2>
+      <p class="card-subtitle"></p>
+      <div class="price-row">
+        <span class="price-star">★</span>
+        <span class="price-value"></span>
+      </div>
+      <button class="buy-btn">
+        <span class="buy-btn-text">Купить</span>
+      </button>
+      <p class="card-status"></p>
+    </article>
+  </template>
 
   <script src="script.js"></script>
 </body>
