@@ -59,11 +59,20 @@
         <div class="profile-username" id="profileUsername">@—</div>
       </div>
 
-      <div class="stats-card">
-        <div class="stats-row">
-          <span class="stats-label">Покупок сделано</span>
-          <span class="stats-value" id="profilePurchases">0</span>
+      <div class="case-card">
+        <span class="case-card-eyebrow">Бесплатный кейс</span>
+        <h2 class="case-card-title">Кейс с промокодом</h2>
+        <p class="case-card-desc">Открой кейс и получи промокод на скидку — от 5% до 50%. Код одноразовый.</p>
+
+        <button class="case-open-btn" id="caseOpenBtn" type="button">Открыть кейс</button>
+
+        <div class="case-result" id="caseResult" hidden>
+          <span class="case-result-badge" id="caseResultBadge">-5%</span>
+          <span class="case-result-code" id="caseResultCode">Kichiro-XXXXX</span>
+          <button class="case-copy-btn" id="caseCopyBtn" type="button">Скопировать</button>
         </div>
+
+        <p class="case-status" id="caseStatus"></p>
       </div>
     </section>
 
@@ -87,8 +96,13 @@
         </div>
       </div>
 
+      <div class="description-card">
+        <span class="description-card-label">Описание</span>
+        <p class="description-card-text" id="checkoutDescription"></p>
+      </div>
+
       <div class="option-group">
-        <span class="option-group-label">Срок доступа</span>
+        <span class="option-group-label">Тариф</span>
         <div class="duration-options" id="checkoutDurations"></div>
       </div>
 
@@ -161,11 +175,14 @@
     </article>
   </template>
 
-  <!-- Шаблон опции срока доступа -->
+  <!-- Шаблон опции срока доступа (тарифа) -->
   <template id="durationOptionTemplate">
     <button class="duration-option" type="button">
       <span class="duration-option-label"></span>
-      <span class="duration-option-price"></span>
+      <span class="duration-option-right">
+        <span class="duration-option-price"></span>
+        <span class="duration-option-radio"></span>
+      </span>
     </button>
   </template>
 
