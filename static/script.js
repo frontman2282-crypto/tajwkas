@@ -5,26 +5,27 @@ const PRODUCTS = [
   {
     id: "dystopia",
     title: "Dystopia",
-    subtitle: "Доступ к закрытой коллекции",
-    price: 2,
+    subtitle: "Премиальный статус и расширенные возможности",
+    description:
+      "Dystopia — это премиальный игровой проект нового уровня, созданный для тех, кто хочет больше, чем обычный опыт в игре. Это система уникальных возможностей, расширенного функционала и особого статуса, который выделяет тебя среди остальных игроков.",
+    price: 150,
     initial: "D",
     badges: ["UNDETECTED"],
   },
 ];
 
-// Сроки доступа — должны совпадать с DURATIONS в bot.py
+// Сроки доступа — должны совпадать с DURATIONS в bot.py.
+// Цены указаны в звёздах (Telegram Stars) — поменяй значения price
+// на свои под каждый тариф.
 const DURATIONS = [
-  { code: "1w", label: "1 неделя", price: 2 },
-  { code: "1m", label: "1 месяц", price: 2 },
-  { code: "1y", label: "1 год", price: 2 },
+  { code: "7d", label: "7 дней", price: 150 },
+  { code: "30d", label: "30 дней", price: 400 },
+  { code: "12m", label: "12 месяцев", price: 3000 },
 ];
 
-// Промокоды — только для мгновенного предпросмотра скидки в интерфейсе.
-// Настоящая цена и проверка промокода всегда считаются на сервере
-// (в bot.py), клиенту в этом вопросе не доверяем.
-const PROMO_CODES = {
-  idea67: { discount_percent: 50 },
-};
+// Промокод проверяется и считается всегда на сервере (в bot.py) — это
+// касается и статических кодов, и одноразовых кодов из кейса, клиенту в
+// этом вопросе не доверяем.
 
 // Иконка звезды (Telegram Stars) — используется вместо символа "★",
 // который выглядит по-разному в разных шрифтах/системах
@@ -263,7 +264,6 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
       if (status === "paid") {
         setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
         tg.HapticFeedback?.notificationOccurred("success");
-        refreshProfile();
       } else if (status === "cancelled") {
         setCardStatus(statusEl, "Оплата отменена");
       } else if (status === "failed") {
@@ -284,6 +284,7 @@ const viewCheckout = document.getElementById("view-checkout");
 const checkoutTitle = document.getElementById("checkoutTitle");
 const checkoutInitial = document.getElementById("checkoutInitial");
 const checkoutSubtitle = document.getElementById("checkoutSubtitle");
+const checkoutDescription = document.getElementById("checkoutDescription");
 const checkoutBadges = document.getElementById("checkoutBadges");
 const checkoutDurations = document.getElementById("checkoutDurations");
 const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
@@ -315,6 +316,7 @@ function openCheckout(product) {
   checkoutTitle.textContent = product.title;
   checkoutInitial.textContent = product.initial;
   checkoutSubtitle.textContent = product.subtitle;
+  checkoutDescription.textContent = product.description || "";
 
   checkoutBadges.innerHTML = "";
   (product.badges || []).forEach((badgeText) => {
@@ -355,7 +357,7 @@ checkoutDurations.addEventListener("click", (e) => {
   tg?.HapticFeedback?.selectionChanged();
 });
 
-function applyPromoCode() {
+async function applyPromoCode() {
   const rawCode = checkoutPromoInput.value.trim();
 
   if (!rawCode) {
@@ -363,26 +365,39 @@ function applyPromoCode() {
     return;
   }
 
-  const promo = PROMO_CODES[rawCode.toLowerCase()];
+  checkoutPromoApply.disabled = true;
+  setPromoStatus("Проверяем промокод...");
 
-  if (!promo) {
+  let data;
+  try {
+    const response = await fetch(`/validate_promo?code=${encodeURIComponent(rawCode)}`);
+    data = await response.json();
+  } catch (err) {
+    checkoutPromoApply.disabled = false;
+    setPromoStatus("Не удалось проверить промокод, попробуй ещё раз", "error");
+    return;
+  }
+
+  checkoutPromoApply.disabled = false;
+
+  if (!data.valid) {
     checkoutPromoCode = null;
     checkoutDiscountPercent = 0;
     checkoutPromoApply.classList.remove("promo-apply-btn--applied");
     checkoutPromoApply.textContent = "Применить";
     checkoutPromoInput.disabled = false;
-    setPromoStatus("Промокод не найден", "error");
+    setPromoStatus("Промокод не найден или уже использован", "error");
     updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
     tg?.HapticFeedback?.notificationOccurred("error");
     return;
   }
 
   checkoutPromoCode = rawCode;
-  checkoutDiscountPercent = promo.discount_percent;
+  checkoutDiscountPercent = data.discount_percent;
   checkoutPromoApply.textContent = "Применено";
   checkoutPromoApply.classList.add("promo-apply-btn--applied");
   checkoutPromoInput.disabled = true;
-  setPromoStatus(`Скидка ${promo.discount_percent}% применена`, "success");
+  setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
   updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
   tg?.HapticFeedback?.notificationOccurred("success");
 }
@@ -457,10 +472,6 @@ function switchView(target) {
   // корректно, но оказывался вне видимой области — выглядело так, будто
   // "интерфейс не открылся". Это и была причина бага "через раз".
   app.scrollTop = 0;
-
-  if (target === "profile") {
-    refreshProfile();
-  }
 }
 
 tabs.forEach((tab) => {
@@ -476,7 +487,6 @@ const profileAvatarFallback = document.getElementById("profileAvatarFallback");
 const profileAvatarLetter = document.getElementById("profileAvatarLetter");
 const profileName = document.getElementById("profileName");
 const profileUsername = document.getElementById("profileUsername");
-const profilePurchases = document.getElementById("profilePurchases");
 
 // Простая иконка пользователя — показывается, если у нас вообще нет
 // данных о человеке (не открыто из Telegram)
@@ -531,19 +541,83 @@ function loadAvatarImage(src, fallbackLetter) {
   testImg.src = src;
 }
 
-async function refreshProfile() {
-  const user = tg?.initDataUnsafe?.user;
-  if (!user) return;
+// ====== Кейс с промокодом ======
+const caseOpenBtn = document.getElementById("caseOpenBtn");
+const caseResult = document.getElementById("caseResult");
+const caseResultBadge = document.getElementById("caseResultBadge");
+const caseResultCode = document.getElementById("caseResultCode");
+const caseCopyBtn = document.getElementById("caseCopyBtn");
+const caseStatus = document.getElementById("caseStatus");
+
+function setCaseStatus(text, type = "") {
+  caseStatus.textContent = text;
+  caseStatus.className = "case-status" + (type ? " " + type : "");
+}
+
+// Определяет визуальную "редкость" приза — чисто для оформления карточки
+function rarityClassFor(discountPercent) {
+  if (discountPercent >= 50) return "case-result-badge--legendary";
+  if (discountPercent >= 30) return "case-result-badge--epic";
+  if (discountPercent >= 15) return "case-result-badge--rare";
+  return "case-result-badge--common";
+}
+
+async function openCase() {
+  caseOpenBtn.disabled = true;
+  caseOpenBtn.textContent = "Открываем...";
+  setCaseStatus("");
 
   try {
-    const response = await fetch(`/profile?user_id=${user.id}`);
-    if (!response.ok) return;
+    const response = await fetch("/open_case", { method: "POST" });
+    if (!response.ok) throw new Error("Сервер не смог открыть кейс");
     const data = await response.json();
-    profilePurchases.textContent = data.purchases ?? 0;
+
+    caseResultBadge.textContent = `-${data.discount_percent}%`;
+    caseResultBadge.className = "case-result-badge " + rarityClassFor(data.discount_percent);
+    caseResultCode.textContent = data.code;
+
+    caseCopyBtn.textContent = "Скопировать";
+    caseCopyBtn.classList.remove("case-copy-btn--copied");
+
+    // Перезапускаем анимацию появления, даже если кейс открывают подряд
+    caseResult.hidden = false;
+    caseResult.style.animation = "none";
+    caseResult.offsetHeight; // reflow, чтобы анимация точно применилась заново
+    caseResult.style.animation = "";
+
+    setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
   } catch (err) {
-    // тихо игнорируем — счётчик просто останется как был
+    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    caseOpenBtn.disabled = false;
+    caseOpenBtn.textContent = "Открыть кейс";
   }
 }
+
+caseOpenBtn.addEventListener("click", () => {
+  openCase();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+caseCopyBtn.addEventListener("click", async () => {
+  const code = caseResultCode.textContent;
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch (err) {
+    // Clipboard API недоступен (например, нет HTTPS) — просто выделяем текст,
+    // чтобы пользователь мог скопировать вручную
+    const range = document.createRange();
+    range.selectNodeContents(caseResultCode);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+  caseCopyBtn.textContent = "Скопировано";
+  caseCopyBtn.classList.add("case-copy-btn--copied");
+  tg?.HapticFeedback?.selectionChanged();
+});
 
 // ====== Инициализация ======
 // Рендерим карточки и профиль только когда сплэш реально скрывается —
@@ -556,5 +630,4 @@ function initApp() {
   appInitialized = true;
   renderProducts();
   fillProfileFromTelegram();
-  refreshProfile();
 }
