@@ -48,6 +48,7 @@ from aiogram.types import (
 )
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.web_app import safe_parse_webapp_init_data
 
 import os
 
@@ -93,17 +94,19 @@ PROMO_CODES = {
 # ====== Промокоды из кейса ======
 # Кейс выдаёт одноразовый промокод формата "Kichiro-XXXXX" (5 случайных
 # букв, в любом регистре, без цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса
-# выпадения, а не проценты от 100. При сумме весов 209 фактические шансы:
-# 5% ≈ 52.6%, 10% ≈ 33.5%, 15% ≈ 12.0%, 30% ≈ 1.4%, 50% ≈ 0.5%.
-# Выбор по-прежнему полностью случайный (random.choices) — при таких весах
-# 5% и 10% просто статистически выпадают в разы чаще остальных, поэтому
-# может казаться, что "всегда одно и то же". Поменяй числа, если нужны
+# выпадения, а не проценты от 100. При сумме весов 200 фактические шансы:
+# 5% = 52.5%, 10% = 37.5%, 15% = 7.0%, 30% = 2.5%, 50% = 0.5%.
+# Раньше 15% выпадал заметно чаще (12.0%), из-за чего создавалось
+# впечатление, что этот приз "слишком частый" — вес понизили примерно
+# вдвое и слегка увеличили 30%, чтобы редкие призы ощущались реже, а
+# крупный джекпот (50%) остался максимально редким. Выбор по-прежнему
+# полностью случайный (random.choices) — поменяй числа, если нужны
 # другие шансы.
 CASE_PRIZES = [
-    (5, 110),
-    (10, 70),
-    (15, 25),
-    (30, 3),
+    (5, 105),
+    (10, 75),
+    (15, 14),
+    (30, 5),
     (50, 1),
 ]
 
@@ -144,6 +147,25 @@ def _save_generated_promos() -> None:
 
 
 GENERATED_PROMOS: dict[str, dict] = _load_generated_promos()
+
+
+def resolve_user_id(init_data_raw: str | None) -> int | None:
+    """Достаёт и проверяет user_id из initData Telegram Mini App.
+
+    initData подписан ботом, поэтому safe_parse_webapp_init_data сама
+    проверяет подпись — доверять "сырому" user_id из тела запроса без
+    этой проверки нельзя (клиент мог бы подставить чужой id и подсмотреть
+    чужие промокоды). Если подпись невалидна, просрочена или initData не
+    передан — просто возвращаем None (код не привяжется ни к какому
+    пользователю и не попадёт в "Мои промокоды", но откроется нормально).
+    """
+    if not init_data_raw:
+        return None
+    try:
+        parsed = safe_parse_webapp_init_data(token=BOT_TOKEN, init_data=init_data_raw)
+        return parsed.user.id if parsed.user else None
+    except Exception:
+        return None
 
 
 def roll_case_prize() -> int:
@@ -326,9 +348,20 @@ async def open_case_handler(request: web.Request) -> web.Response:
     """Открывает бесплатный кейс и выдаёт одноразовый промокод.
 
     Шансы выпадения скидок заданы весами в CASE_PRIZES (5%/10%/15%/30%/50%
-    в пропорции 110:70:25:3:1). Код одноразовый и живёт, пока не будет
-    использован при успешной оплате (см. successful_payment_handler).
+    в пропорции 105:75:14:5:1, т.е. 52.5%/37.5%/7%/2.5%/0.5%). Код
+    одноразовый и живёт, пока не будет использован при успешной оплате
+    (см. successful_payment_handler).
     """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    # Привязываем сгенерированный код к конкретному пользователю Telegram
+    # (если initData передан и валиден) — это и позволяет потом показать
+    # человеку список именно ЕГО неиспользованных кодов в "Моих промокодах".
+    user_id = resolve_user_id(body.get("init_data"))
+
     # Пока CASE_IS_FREE — открытие кейса ничего не стоит. Когда кейс
     # станет платным, здесь нужно будет списать звёзды/проверить оплату
     # перед тем, как выдавать промокод.
@@ -338,6 +371,7 @@ async def open_case_handler(request: web.Request) -> web.Response:
         "code": code,
         "discount_percent": discount_percent,
         "used": False,
+        "user_id": user_id,
     }
     _save_generated_promos()
 
@@ -346,6 +380,33 @@ async def open_case_handler(request: web.Request) -> web.Response:
         "discount_percent": discount_percent,
         "is_free": CASE_IS_FREE,
     })
+
+
+async def my_promo_codes_handler(request: web.Request) -> web.Response:
+    """Отдаёт список неиспользованных кейсовых промокодов текущего
+    пользователя — используется экраном "Мои промокоды" в профиле.
+
+    user_id достаётся только из подписанного initData, поэтому один
+    пользователь не может запросить чужие коды, подставив произвольный id.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = resolve_user_id(body.get("init_data"))
+    if user_id is None:
+        return web.json_response({"codes": []})
+
+    codes = [
+        {"code": promo["code"], "discount_percent": promo["discount_percent"]}
+        for promo in GENERATED_PROMOS.values()
+        if promo.get("user_id") == user_id and not promo["used"]
+    ]
+    # Самые свежие коды — сверху (порядок вставки в словаре сохраняется).
+    codes.reverse()
+
+    return web.json_response({"codes": codes})
 
 
 async def validate_promo_handler(request: web.Request) -> web.Response:
@@ -422,6 +483,7 @@ def build_web_app() -> web.Application:
     app = web.Application(middlewares=[no_cache_static_middleware])
     app.router.add_post("/create_invoice", create_invoice_handler)
     app.router.add_post("/open_case", open_case_handler)
+    app.router.add_post("/my_promo_codes", my_promo_codes_handler)
     app.router.add_get("/validate_promo", validate_promo_handler)
     app.router.add_get("/avatar", avatar_handler)
     app.router.add_get("/", index_handler)
