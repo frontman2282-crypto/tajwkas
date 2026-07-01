@@ -16,7 +16,7 @@
   --green: #22c55e;
   --green-dark: #16a34a;
 
-  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
@@ -29,6 +29,8 @@
 
 html, body {
   height: 100%;
+  background: var(--bg-black);
+  overscroll-behavior-y: none;
 }
 
 body {
@@ -37,6 +39,7 @@ body {
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  min-height: 100dvh;
 }
 
 /* ============ SPLASH ============ */
@@ -152,6 +155,7 @@ body {
 .app {
   position: relative;
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   padding-bottom: 92px;
   opacity: 0;
@@ -199,16 +203,25 @@ body {
   z-index: 1;
   display: none;
   padding: 28px 20px 12px;
-  animation: view-in 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .view--active {
   display: block;
 }
 
+.view--checkout.view--active {
+  animation: view-in-push 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @keyframes view-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes view-in-push {
+  from { opacity: 0; transform: translateX(28px) scale(0.97); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
 .topbar {
@@ -252,10 +265,17 @@ body {
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
   overflow: hidden;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  animation: card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--card-index, 0) * 70ms + 80ms);
 }
 
 .card:active {
   transform: scale(0.985);
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* --- Compact row (collapsed state) --- */
@@ -313,8 +333,8 @@ body {
 .card-row-meta {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 4px;
+  gap: 8px;
+  margin-top: 6px;
   min-width: 0;
 }
 
@@ -381,17 +401,19 @@ body {
   color: var(--text-faint);
   line-height: 1;
 }
-  margin-top: 14px;
+
+.option-group {
+  margin-top: 20px;
 }
 
 .option-group-label {
   display: block;
   font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-faint);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 
 .duration-options {
@@ -404,14 +426,18 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
-  padding: 10px 6px;
+  gap: 4px;
+  padding: 12px 6px;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--card-bg-2);
   color: var(--text-dim);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.duration-option:active {
+  transform: scale(0.96);
 }
 
 .duration-option-label {
@@ -445,7 +471,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 14px;
+  padding: 14px 16px;
   border-radius: 12px;
   border: 1px solid var(--silver-1);
   background: rgba(210, 210, 218, 0.14);
@@ -507,7 +533,7 @@ body {
   background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
   border: 1px solid var(--border);
   border-radius: 22px;
-  padding: 30px 22px 24px;
+  padding: 32px 22px 26px;
   text-align: center;
   margin-bottom: 16px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
@@ -516,14 +542,20 @@ body {
 .profile-avatar-wrap {
   width: 84px;
   height: 84px;
-  margin: 0 auto 16px;
+  margin: 0 auto 20px;
   position: relative;
 }
 
-.profile-avatar {
+.profile-avatar,
+.profile-avatar--fallback {
+  position: absolute;
+  inset: 0;
   width: 84px;
   height: 84px;
   border-radius: 50%;
+}
+
+.profile-avatar {
   object-fit: cover;
   border: 2px solid var(--silver-2);
   box-shadow: 0 0 0 4px rgba(220, 220, 226, 0.14);
@@ -541,6 +573,14 @@ body {
   text-shadow: 0 0 16px rgba(255, 255, 255, 0.4);
 }
 
+/* Единственный источник истины для видимости — атрибут [hidden].
+   ID-селектор гарантирует приоритет над любыми другими display-правилами,
+   поэтому фото и заглушка-буква больше никогда не показываются одновременно. */
+#profileAvatar[hidden],
+#profileAvatarFallback[hidden] {
+  display: none !important;
+}
+
 .profile-avatar--fallback svg {
   width: 38px;
   height: 38px;
@@ -550,9 +590,10 @@ body {
 
 .profile-name {
   font-family: var(--font-display);
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
-  margin-bottom: 3px;
+  margin-bottom: 5px;
+  letter-spacing: -0.01em;
 }
 
 .profile-username {
@@ -625,8 +666,33 @@ body {
   border: 1px solid var(--border);
   border-radius: 20px;
   padding: 20px;
-  margin-bottom: 6px;
+  margin-bottom: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  opacity: 0;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.05s forwards;
+}
+
+.view--checkout .option-group {
+  opacity: 0;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.view--checkout .buy-btn {
+  animation: rise-in-transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.view--checkout .option-group:nth-of-type(1) { animation-delay: 0.12s; }
+.view--checkout .option-group:nth-of-type(2) { animation-delay: 0.19s; }
+.view--checkout .buy-btn { animation-delay: 0.26s; }
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rise-in-transform {
+  from { transform: translateY(10px); }
+  to { transform: translateY(0); }
 }
 
 .checkout-hero-icon {
@@ -654,7 +720,7 @@ body {
 .checkout-hero-badges {
   display: flex;
   gap: 6px;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .checkout-hero-subtitle {
@@ -673,9 +739,7 @@ body {
   display: flex;
   gap: 6px;
   padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, rgba(10, 5, 18, 0.4) 0%, rgba(6, 2, 11, 0.96) 30%, var(--bg-black) 100%);
-  backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border-soft);
+  background: var(--bg-black);
 }
 
 .tab {
