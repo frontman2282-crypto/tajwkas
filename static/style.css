@@ -51,6 +51,13 @@ body {
   overflow: hidden;
 }
 
+/* Таббар прячем, пока открыта клавиатура (см. setAppHeight в script.js) —
+   на экране ввода промокода он не нужен, а освобождённое место не даёт
+   контенту "наезжать" на клавиатуру. */
+body.keyboard-open .tabbar {
+  display: none;
+}
+
 /* ============ SPLASH ============ */
 
 .splash {
@@ -165,10 +172,18 @@ body {
   position: relative;
   height: 100vh;
   height: 100dvh;
+  /* На iOS 100dvh не всегда пересчитывается, когда открывается
+     клавиатура — из-за этого нижняя часть экрана (кнопка "Купить",
+     таббар) обрезалась и наезжала на промокод. --app-height
+     проставляется через JS по window.visualViewport и имеет приоритет. */
+  height: var(--app-height, 100dvh);
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
+  /* pan-y защищает от случайного горизонтального пинч-зума/скролла на
+     сенсорных устройствах, оставляя вертикальную прокрутку рабочей. */
+  touch-action: pan-y;
   padding-bottom: 92px;
   opacity: 0;
   transform: translateY(10px);
@@ -487,9 +502,19 @@ body {
   background: var(--card-bg-2);
   color: var(--text-main);
   font-family: var(--font-body);
-  font-size: 13.5px;
+  /* iOS открывает своё нативное увеличение и подменяет фон поля на
+     белый, если размер шрифта меньше 16px — держим 16px, чтобы этого
+     не происходило. */
+  font-size: 16px;
   outline: none;
   transition: border-color 0.15s ease;
+  /* Убираем нативный вид поля (WebKit подставляет свой светлый фон
+     инпута при фокусе/автозаполнении, из-за чего поле "белеет" —
+     именно это и происходило на скриншоте). */
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-text-fill-color: var(--text-main);
+  caret-color: var(--silver-2);
 }
 
 .promo-input::placeholder {
@@ -498,6 +523,19 @@ body {
 
 .promo-input:focus {
   border-color: var(--silver-1);
+  background: var(--card-bg-2);
+}
+
+/* WebKit применяет отдельный набор стилей для автозаполненных полей —
+   без этого правила поле остаётся белым даже после наших правок выше. */
+.promo-input:-webkit-autofill,
+.promo-input:-webkit-autofill:focus,
+.promo-input:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--text-main);
+  -webkit-box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  caret-color: var(--silver-2);
+  transition: background-color 9999s ease-in-out 0s;
 }
 
 .promo-apply-btn {
