@@ -252,9 +252,20 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
     const invoiceLink = invoiceData.invoice_link;
 
     // Сервер — источник истины по промокодам. Если он не распознал код,
-    // который клиент посчитал валидным, сообщаем об этом честно.
+    // который клиент посчитал валидным (например, код успели использовать
+    // в другом месте, он истёк, или состояние сервера сбросилось), нельзя
+    // просто показать текст ошибки поверх — нужно ПОЛНОСТЬЮ сбросить
+    // визуальное состояние "применено", иначе кнопка промокода остаётся
+    // зелёной ("Применено"), а под ней текст говорит, что код не найден —
+    // именно это выглядело как баг на скриншоте.
     if (checkoutPromoCode && invoiceData.promo_invalid) {
-      setPromoStatus("Промокод не найден, покупка по полной цене", "error");
+      checkoutPromoCode = null;
+      checkoutDiscountPercent = 0;
+      checkoutPromoApply.textContent = "Применить";
+      checkoutPromoApply.classList.remove("promo-apply-btn--applied");
+      checkoutPromoInput.disabled = false;
+      checkoutPromoInput.value = "";
+      setPromoStatus("Промокод не найден или уже использован, покупка по полной цене", "error");
     }
 
     tg.openInvoice(invoiceLink, (status) => {
