@@ -142,6 +142,13 @@
         </div>
       </header>
 
+      <div class="promo-list-actions" id="promoListActions" hidden>
+        <button class="promo-select-mode-btn" id="promoSelectModeBtn" type="button">Выбрать</button>
+        <button class="promo-delete-selected-btn" id="promoDeleteSelectedBtn" type="button" hidden disabled>Удалить (<span id="promoSelectedCount">0</span>)</button>
+        <button class="promo-cancel-select-btn" id="promoCancelSelectBtn" type="button" hidden>Отмена</button>
+        <button class="promo-delete-all-btn" id="promoDeleteAllBtn" type="button">Удалить все</button>
+      </div>
+
       <div class="promo-list" id="promoList"></div>
       <p class="promo-list-empty" id="promoListEmpty" hidden>Пока нет неиспользованных промокодов — открой кейс в магазине, чтобы получить скидку.</p>
     </section>
@@ -291,6 +298,21 @@
       <p class="case-status" id="caseStatus"></p>
     </section>
 
+  </div>
+
+  <!-- ===== Мини-меню с промокодом после открытия кейса ======
+       Вынесено за пределы #app по той же причине, что и таббар ниже:
+       #app анимируется через transform, из-за чего position:fixed внутри
+       него считается "fixed относительно #app", а не всего экрана. -->
+  <div class="case-prize-modal" id="casePrizeModal" hidden>
+    <div class="case-prize-modal-backdrop" id="casePrizeModalBackdrop"></div>
+    <div class="case-prize-modal-card" role="dialog" aria-modal="true" aria-labelledby="casePrizeModalTitle">
+      <span class="case-prize-modal-badge" id="casePrizeModalBadge">-5%</span>
+      <h2 class="case-prize-modal-title" id="casePrizeModalTitle">Промокод получен!</h2>
+      <span class="case-prize-modal-code" id="casePrizeModalCode">Kichiro-XXXXX</span>
+      <p class="case-prize-modal-hint">Промокод можно использовать во вкладке «Профиль → Мои промокоды»</p>
+      <button class="case-prize-modal-ok" id="casePrizeModalOk" type="button">ОК</button>
+    </div>
   </div>
 
   <!-- ===== Нижняя навигация ======
