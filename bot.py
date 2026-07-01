@@ -76,7 +76,7 @@ PRODUCTS = {
 # Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
 # именно они прилетают в payload инвойса и в successful_payment.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 150},
+    "7d": {"label": "7 дней", "price": 2},
     "30d": {"label": "30 дней", "price": 400},
     "12m": {"label": "12 месяцев", "price": 3000},
 }
