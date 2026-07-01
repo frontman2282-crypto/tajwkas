@@ -49,6 +49,42 @@ if (tg) {
   }
 }
 
+// ====== Реальная высота вьюпорта (фикс для клавиатуры) ======
+// 100dvh на iOS не всегда пересчитывается, когда открывается клавиатура —
+// из-за этого нижняя часть интерфейса (промокод, кнопка "Купить", таббар)
+// уезжала под клавиатуру и всё "ломалось" визуально. window.visualViewport
+// даёт настоящую видимую высоту, на неё и завязываемся.
+// Заодно, пока клавиатура открыта, прячем нижний таббар — на экране
+// оформления он всё равно не нужен, а место для полей освобождает.
+function setAppHeight() {
+  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", vh + "px");
+
+  const keyboardLikelyOpen = window.innerHeight - vh > 120;
+  document.body.classList.toggle("keyboard-open", keyboardLikelyOpen);
+}
+
+setAppHeight();
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", setAppHeight);
+  window.visualViewport.addEventListener("scroll", setAppHeight);
+} else {
+  window.addEventListener("resize", setAppHeight);
+}
+
+// Также ещё раз "поджимаем" жест закрытия шторки при каждом ресайзе —
+// на некоторых клиентах открытие клавиатуры сбрасывает это состояние.
+if (tg) {
+  window.addEventListener("resize", () => {
+    try {
+      tg.disableVerticalSwipes?.();
+    } catch (err) {
+      // игнорируем
+    }
+  });
+}
+
 // ====== Сплэш / плавное появление ======
 const splash = document.getElementById("splash");
 const app = document.getElementById("app");
@@ -377,6 +413,15 @@ checkoutPromoInput.addEventListener("keydown", (e) => {
     e.preventDefault();
     applyPromoCode();
   }
+});
+
+checkoutPromoInput.addEventListener("focus", () => {
+  // Небольшая задержка нужна, чтобы клавиатура успела появиться и
+  // визуальный вьюпорт пересчитался — иначе scrollIntoView сработает
+  // по ещё не сжавшейся высоте и промахнётся.
+  setTimeout(() => {
+    checkoutPromoInput.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, 300);
 });
 
 checkoutBuyBtn.addEventListener("click", () => {
