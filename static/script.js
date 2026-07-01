@@ -29,7 +29,7 @@ const DURATIONS = [
 
 // Иконка звезды (Telegram Stars) — используется вместо символа "★",
 // который выглядит по-разному в разных шрифтах/системах
-const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7.1-6.3-3.9-6.3 3.9 1.7-7.1-5.5-4.7 7.2-.6z"/></svg>`;
+const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>`;
 
 // ====== Инициализация Telegram WebApp ======
 const tg = window.Telegram?.WebApp;
@@ -507,6 +507,7 @@ const views = {
   shop: document.getElementById("view-shop"),
   profile: document.getElementById("view-profile"),
   checkout: viewCheckout,
+  case: document.getElementById("view-case"),
 };
 
 function switchView(target) {
@@ -514,9 +515,9 @@ function switchView(target) {
     el.classList.toggle("view--active", key === target);
   });
 
-  // Подсвечиваем вкладку "Магазин", когда открыт экран оформления —
-  // это переход внутри магазина, а не отдельный раздел
-  const activeTabKey = target === "checkout" ? "shop" : target;
+  // Подсвечиваем вкладку "Магазин", когда открыт экран оформления или
+  // кейса — это переход внутри магазина, а не отдельный раздел
+  const activeTabKey = (target === "checkout" || target === "case") ? "shop" : target;
   tabs.forEach((t) => t.classList.toggle("tab--active", t.dataset.view === activeTabKey));
 
   // Сбрасываем прокрутку контейнера .app в начало при каждом переключении
@@ -595,12 +596,25 @@ function loadAvatarImage(src, fallbackLetter) {
 }
 
 // ====== Кейс с промокодом ======
+const caseEntryCard = document.getElementById("caseEntryCard");
+const caseBack = document.getElementById("caseBack");
+const caseStage = document.getElementById("caseStage");
 const caseOpenBtn = document.getElementById("caseOpenBtn");
 const caseResult = document.getElementById("caseResult");
 const caseResultBadge = document.getElementById("caseResultBadge");
 const caseResultCode = document.getElementById("caseResultCode");
 const caseCopyBtn = document.getElementById("caseCopyBtn");
 const caseStatus = document.getElementById("caseStatus");
+const caseReelWrap = document.getElementById("caseReelWrap");
+const caseReelTrack = document.getElementById("caseReelTrack");
+
+// Значения приза только для визуального наполнения рулетки декоями —
+// реальный приз всегда приходит с сервера (см. /open_case в bot.py),
+// клиент его не выбирает и не может повлиять на результат.
+const CASE_REEL_VALUES = [5, 10, 15, 30, 50];
+const CASE_REEL_DECOYS_BEFORE = 28;
+const CASE_REEL_DECOYS_AFTER = 6;
+const CASE_SPIN_DURATION_MS = 3200;
 
 function setCaseStatus(text, type = "") {
   caseStatus.textContent = text;
@@ -608,23 +622,105 @@ function setCaseStatus(text, type = "") {
 }
 
 // Определяет визуальную "редкость" приза — чисто для оформления карточки
+function rarityKeyFor(discountPercent) {
+  if (discountPercent >= 50) return "legendary";
+  if (discountPercent >= 30) return "epic";
+  if (discountPercent >= 15) return "rare";
+  if (discountPercent >= 10) return "uncommon";
+  return "common";
+}
+
 function rarityClassFor(discountPercent) {
-  if (discountPercent >= 50) return "case-result-badge--legendary";
-  if (discountPercent >= 30) return "case-result-badge--epic";
-  if (discountPercent >= 15) return "case-result-badge--rare";
-  if (discountPercent >= 10) return "case-result-badge--uncommon";
-  return "case-result-badge--common";
+  return "case-result-badge--" + rarityKeyFor(discountPercent);
+}
+
+function buildReelItem(value) {
+  const el = document.createElement("div");
+  el.className = "case-reel-item case-reel-item--" + rarityKeyFor(value);
+  el.textContent = `-${value}%`;
+  return el;
+}
+
+// Полностью сбрасывает экран кейса в исходное состояние — вызывается
+// каждый раз перед переходом на этот экран, чтобы предыдущий результат
+// не "мигал" на секунду, пока не откроется свежий кейс.
+function resetCaseStage() {
+  caseReelWrap.hidden = true;
+  caseReelTrack.innerHTML = "";
+  caseReelTrack.style.transition = "none";
+  caseReelTrack.style.transform = "translateX(0px)";
+  caseResult.hidden = true;
+  caseStage.classList.remove("case-stage--spinning", "case-stage--opened");
+  caseOpenBtn.hidden = false;
+  caseOpenBtn.disabled = false;
+  caseOpenBtn.textContent = "Открыть кейс";
+  setCaseStatus("");
+}
+
+// Строит длинную ленту призов со случайными "декоями" и настоящим призом
+// (discountPercent) где-то в середине, затем плавно прокручивает её так,
+// чтобы приз точно остановился под указателем по центру — как в открытии
+// кейсов в играх. Итог целиком определяется сервером ДО начала прокрутки,
+// анимация лишь визуализирует уже известный результат.
+function spinReelTo(discountPercent) {
+  const items = [];
+  for (let i = 0; i < CASE_REEL_DECOYS_BEFORE; i++) {
+    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
+  }
+  const targetIndex = items.length;
+  items.push(discountPercent);
+  for (let i = 0; i < CASE_REEL_DECOYS_AFTER; i++) {
+    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
+  }
+
+  caseReelTrack.innerHTML = "";
+  caseReelTrack.style.transition = "none";
+  caseReelTrack.style.transform = "translateX(0px)";
+
+  items.forEach((value) => {
+    caseReelTrack.appendChild(buildReelItem(value));
+  });
+
+  // Reflow, чтобы браузер точно применил сброс transform перед тем, как
+  // мы запустим анимацию к новой позиции — иначе переход может "слипнуться"
+  // со сбросом и визуально не сыграть.
+  void caseReelTrack.offsetWidth;
+
+  const wrapWidth = caseReelWrap.clientWidth;
+  const targetEl = caseReelTrack.children[targetIndex];
+  const itemCenter = targetEl.offsetLeft + targetEl.offsetWidth / 2;
+  // Небольшой случайный сдвиг в пределах ширины плашки приза, чтобы
+  // рулетка не останавливалась каждый раз идеально по центру — так
+  // выглядит естественнее.
+  const jitter = (Math.random() - 0.5) * (targetEl.offsetWidth * 0.5);
+  const offset = itemCenter + jitter - wrapWidth / 2;
+
+  requestAnimationFrame(() => {
+    caseReelTrack.style.transition = `transform ${CASE_SPIN_DURATION_MS}ms cubic-bezier(0.1, 0.82, 0.13, 1)`;
+    caseReelTrack.style.transform = `translateX(${-offset}px)`;
+  });
 }
 
 async function openCase() {
   caseOpenBtn.disabled = true;
-  caseOpenBtn.textContent = "Открываем...";
+  caseOpenBtn.hidden = true;
+  caseResult.hidden = true;
   setCaseStatus("");
+  caseStage.classList.add("case-stage--spinning");
+  caseReelWrap.hidden = false;
 
   try {
     const response = await fetch("/open_case", { method: "POST" });
     if (!response.ok) throw new Error("Сервер не смог открыть кейс");
     const data = await response.json();
+
+    spinReelTo(data.discount_percent);
+    tg?.HapticFeedback?.selectionChanged();
+
+    // Ждём, пока рулетка реально докрутится до приза, и только потом
+    // показываем карточку результата — иначе она появится раньше, чем
+    // прокрутка остановится, и будет выглядеть рассинхронизированно.
+    await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
 
     caseResultBadge.textContent = `-${data.discount_percent}%`;
     caseResultBadge.className = "case-result-badge " + rarityClassFor(data.discount_percent);
@@ -633,15 +729,21 @@ async function openCase() {
     caseCopyBtn.textContent = "Скопировать";
     caseCopyBtn.classList.remove("case-copy-btn--copied");
 
-    // Перезапускаем анимацию появления, даже если кейс открывают подряд
     caseResult.hidden = false;
     caseResult.style.animation = "none";
     caseResult.offsetHeight; // reflow, чтобы анимация точно применилась заново
     caseResult.style.animation = "";
 
+    caseReelWrap.hidden = true;
+    caseStage.classList.remove("case-stage--spinning");
+    caseStage.classList.add("case-stage--opened");
+
     setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
     tg?.HapticFeedback?.notificationOccurred("success");
   } catch (err) {
+    caseReelWrap.hidden = true;
+    caseStage.classList.remove("case-stage--spinning");
+    caseOpenBtn.hidden = false;
     setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
     tg?.HapticFeedback?.notificationOccurred("error");
   } finally {
@@ -649,6 +751,17 @@ async function openCase() {
     caseOpenBtn.textContent = "Открыть кейс";
   }
 }
+
+caseEntryCard.addEventListener("click", () => {
+  resetCaseStage();
+  switchView("case");
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+caseBack.addEventListener("click", () => {
+  switchView("shop");
+  tg?.HapticFeedback?.selectionChanged();
+});
 
 caseOpenBtn.addEventListener("click", () => {
   openCase();
@@ -672,6 +785,7 @@ caseCopyBtn.addEventListener("click", async () => {
   caseCopyBtn.classList.add("case-copy-btn--copied");
   tg?.HapticFeedback?.selectionChanged();
 });
+
 
 // ====== Инициализация ======
 // Рендерим карточки и профиль только когда сплэш реально скрывается —
