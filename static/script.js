@@ -68,7 +68,6 @@ setAppHeight();
 
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", setAppHeight);
-  window.visualViewport.addEventListener("scroll", setAppHeight);
 } else {
   window.addEventListener("resize", setAppHeight);
 }
