@@ -43,6 +43,10 @@
         <h1 class="topbar-title">Магазин</h1>
       </header>
 
+      <div id="productList" class="product-grid">
+        <!-- Карточки товаров рендерятся из script.js -->
+      </div>
+
       <div class="shop-features">
         <button class="case-entry-card" id="caseEntryCard" type="button">
           <span class="case-entry-free">FREE</span>
@@ -50,35 +54,52 @@
             <svg class="case-box-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <defs>
                 <linearGradient id="caseLidGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#3c3c42"/>
-                  <stop offset="100%" stop-color="#18181b"/>
+                  <stop offset="0%" stop-color="#48484f"/>
+                  <stop offset="55%" stop-color="#28282c"/>
+                  <stop offset="100%" stop-color="#161619"/>
                 </linearGradient>
                 <linearGradient id="caseBodyGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#c4c4cc"/>
-                  <stop offset="100%" stop-color="#88888f"/>
+                  <stop offset="0%" stop-color="#d2d2d9"/>
+                  <stop offset="100%" stop-color="#84848c"/>
                 </linearGradient>
+                <linearGradient id="caseRibbonGrad" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0%" stop-color="#ffdd8a"/>
+                  <stop offset="100%" stop-color="#f5a623"/>
+                </linearGradient>
+                <radialGradient id="caseLidShine" cx="50%" cy="20%" r="65%">
+                  <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+                  <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+                </radialGradient>
               </defs>
               <ellipse class="case-box-glow" cx="100" cy="98" rx="60" ry="36"/>
               <path class="case-box-body" d="M36 90 L36 146 Q36 152 41 155 L94 182 Q100 185 106 182 L159 155 Q164 152 164 146 L164 90 L100 124 Z" fill="url(#caseBodyGrad)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/>
+              <path class="case-box-ribbon-v" d="M100 124 L100 182" stroke="url(#caseRibbonGrad)" stroke-width="10" stroke-linecap="round"/>
               <path class="case-box-seam" d="M100 124 L100 185" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
               <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidGrad)" stroke="rgba(0,0,0,0.3)" stroke-width="2"/>
+              <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidShine)" stroke="none"/>
+              <path class="case-box-ribbon-h" d="M32 84 L100 120 L168 84" fill="none" stroke="url(#caseRibbonGrad)" stroke-width="9" stroke-linecap="round"/>
+              <g class="case-box-bow">
+                <path d="M100 106 q-16 -8 -20 4 q10 8 20 3 q10 5 20 -3 q-4 -12 -20 -4Z" fill="url(#caseRibbonGrad)" stroke="#c9750f" stroke-width="1.4"/>
+                <circle cx="100" cy="108" r="4.2" fill="#fff1cf"/>
+              </g>
               <g class="case-box-lock">
                 <rect x="87" y="103" width="26" height="22" rx="5" fill="#1c1c1f" stroke="#f1f1f4" stroke-width="2"/>
                 <circle cx="100" cy="114" r="3" fill="#f1f1f4"/>
               </g>
+              <g class="case-box-percent-tag">
+                <rect x="140" y="30" width="30" height="18" rx="5" fill="url(#caseRibbonGrad)" transform="rotate(14 155 39)"/>
+                <text x="155" y="43" transform="rotate(14 155 39)" text-anchor="middle" font-family="'Golos Text', sans-serif" font-size="12" font-weight="800" fill="#3a2400">%</text>
+              </g>
               <g class="case-box-sparkles">
                 <path d="M50 58 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3z"/>
                 <path d="M154 68 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+                <path d="M112 32 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
               </g>
             </svg>
           </span>
           <span class="case-entry-title">Кейс</span>
           <span class="case-entry-sub">Промокод до -50%</span>
         </button>
-      </div>
-
-      <div id="productList" class="product-grid">
-        <!-- Карточки товаров рендерятся из script.js -->
       </div>
     </section>
 
@@ -99,6 +120,30 @@
         <div class="profile-name" id="profileName">—</div>
         <div class="profile-username" id="profileUsername">@—</div>
       </div>
+
+      <button class="profile-promo-btn" id="myPromosBtn" type="button">
+        <span class="profile-promo-btn-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2V10a1.6 1.6 0 0 0 0 3v1.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V13a1.6 1.6 0 0 0 0-3Z"/><path d="M14 7.5v9" stroke-dasharray="2.2 2.6"/></svg>
+        </span>
+        <span class="profile-promo-btn-text">Мои промокоды</span>
+        <span class="profile-promo-btn-chevron">›</span>
+      </button>
+    </section>
+
+    <!-- ===== Экран: МОИ ПРОМОКОДЫ ===== -->
+    <section id="view-mypromos" class="view view--checkout">
+      <header class="checkout-topbar">
+        <button class="back-btn" id="myPromosBack" type="button" aria-label="Назад">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div>
+          <span class="topbar-eyebrow">Промокоды</span>
+          <h1 class="topbar-title">Мои промокоды</h1>
+        </div>
+      </header>
+
+      <div class="promo-list" id="promoList"></div>
+      <p class="promo-list-empty" id="promoListEmpty" hidden>Пока нет неиспользованных промокодов — открой кейс в магазине, чтобы получить скидку.</p>
     </section>
 
     <!-- ===== Экран: ОФОРМЛЕНИЕ ПОКУПКИ ===== -->
@@ -134,7 +179,10 @@
       <div class="option-group">
         <span class="option-group-label">Промокод</span>
         <div class="promo-row">
-          <input type="text" id="checkoutPromoInput" class="promo-input" placeholder="Введите промокод" autocomplete="off" autocapitalize="off" spellcheck="false">
+          <div class="promo-input-wrap">
+            <svg class="promo-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2V10a1.6 1.6 0 0 0 0 3v1.5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V13a1.6 1.6 0 0 0 0-3Z"/><path d="M14 7.5v9" stroke-dasharray="2.2 2.6"/></svg>
+            <input type="text" id="checkoutPromoInput" class="promo-input" placeholder="Введите промокод" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </div>
           <button class="promo-apply-btn" id="checkoutPromoApply" type="button">Применить</button>
         </div>
         <p class="promo-status" id="checkoutPromoStatus"></p>
@@ -174,26 +222,47 @@
         <svg class="case-box-svg case-box-svg--big" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <defs>
             <linearGradient id="caseLidGradBig" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#3c3c42"/>
-              <stop offset="100%" stop-color="#18181b"/>
+              <stop offset="0%" stop-color="#48484f"/>
+              <stop offset="55%" stop-color="#28282c"/>
+              <stop offset="100%" stop-color="#161619"/>
             </linearGradient>
             <linearGradient id="caseBodyGradBig" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#c4c4cc"/>
-              <stop offset="100%" stop-color="#88888f"/>
+              <stop offset="0%" stop-color="#d2d2d9"/>
+              <stop offset="100%" stop-color="#84848c"/>
             </linearGradient>
+            <linearGradient id="caseRibbonGradBig" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stop-color="#ffdd8a"/>
+              <stop offset="100%" stop-color="#f5a623"/>
+            </linearGradient>
+            <radialGradient id="caseLidShineBig" cx="50%" cy="20%" r="65%">
+              <stop offset="0%" stop-color="#ffffff" stop-opacity="0.35"/>
+              <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
           </defs>
           <ellipse class="case-box-glow" cx="100" cy="98" rx="66" ry="40"/>
           <path class="case-box-body" d="M36 90 L36 146 Q36 152 41 155 L94 182 Q100 185 106 182 L159 155 Q164 152 164 146 L164 90 L100 124 Z" fill="url(#caseBodyGradBig)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/>
+          <path class="case-box-ribbon-v" d="M100 124 L100 182" stroke="url(#caseRibbonGradBig)" stroke-width="10" stroke-linecap="round"/>
           <path class="case-box-seam" d="M100 124 L100 185" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
           <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidGradBig)" stroke="rgba(0,0,0,0.3)" stroke-width="2"/>
+          <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidShineBig)" stroke="none"/>
+          <path class="case-box-ribbon-h" d="M32 84 L100 120 L168 84" fill="none" stroke="url(#caseRibbonGradBig)" stroke-width="9" stroke-linecap="round"/>
+          <g class="case-box-bow">
+            <path d="M100 106 q-16 -8 -20 4 q10 8 20 3 q10 5 20 -3 q-4 -12 -20 -4Z" fill="url(#caseRibbonGradBig)" stroke="#c9750f" stroke-width="1.4"/>
+            <circle cx="100" cy="108" r="4.2" fill="#fff1cf"/>
+          </g>
           <g class="case-box-lock">
             <rect x="87" y="103" width="26" height="22" rx="5" fill="#1c1c1f" stroke="#f1f1f4" stroke-width="2"/>
             <circle cx="100" cy="114" r="3" fill="#f1f1f4"/>
+          </g>
+          <g class="case-box-percent-tag">
+            <rect x="140" y="26" width="32" height="19" rx="5" fill="url(#caseRibbonGradBig)" transform="rotate(14 156 35)"/>
+            <text x="156" y="39.5" transform="rotate(14 156 35)" text-anchor="middle" font-family="'Golos Text', sans-serif" font-size="13" font-weight="800" fill="#3a2400">%</text>
           </g>
           <g class="case-box-sparkles">
             <path d="M48 56 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3z"/>
             <path d="M156 66 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
             <path d="M100 30 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+            <path d="M28 118 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
           </g>
         </svg>
         <p class="case-stage-desc">Открой кейс и получи одноразовый промокод на скидку — от 5% до 50%.</p>
@@ -213,6 +282,11 @@
         <span class="case-result-code" id="caseResultCode">Kichiro-XXXXX</span>
         <button class="case-copy-btn" id="caseCopyBtn" type="button">Скопировать</button>
       </div>
+
+      <button class="case-again-btn" id="caseAgainBtn" type="button" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
+        <span>Открыть кейс ещё раз</span>
+      </button>
 
       <p class="case-status" id="caseStatus"></p>
     </section>
