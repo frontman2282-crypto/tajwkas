@@ -1,30 +1,3 @@
-"""
-Бот на aiogram + создание инвойса звёздами (Telegram Stars, валюта XTR)
-для товара "dystopia" за 150 звёзд.
-
-Что делает этот файл:
-1. Поднимает обычного aiogram-бота (long polling), который умеет
-   принимать pre_checkout_query и successful_payment.
-2. Поднимает рядом aiohttp веб-сервер с маршрутом POST /create_invoice —
-   именно его дёргает script.js из мини-аппа, чтобы получить ссылку
-   на инвойс и открыть нативное окно оплаты через tg.openInvoice().
-
-Установка зависимостей (aiogram у тебя уже есть):
-    pip install aiohttp aiohttp-cors
-
-Запуск:
-    python bot.py
-
-Важно:
-- Для оплаты звёздами provider_token в send_invoice / create_invoice_link
-  должен быть пустой строкой "", а currency = "XTR".
-- prices указываются в LabeledPrice, amount — это просто 150 (без умножения
-  на 100, как в обычных валютах — у звёзд множитель 1).
-- Мини-апп (index.html/style.css/script.js) должен быть захостен на
-  HTTPS-домене (например, GitHub Pages, Vercel, или твой же сервер) и
-  подключён в @BotFather через /newapp или как Menu Button.
-"""
-
 import asyncio
 import logging
 
@@ -57,6 +30,13 @@ PRODUCTS = {
         "price": 150,
     }
 }
+
+# Счётчик покупок на пользователя (для вкладки "Профиль" в мини-аппе).
+# ВАЖНО: это простое хранилище в памяти процесса — оно обнуляется при
+# каждом передеплое/рестарте на Render. Для честного постоянного счёта
+# в будущем стоит подключить настоящую БД (например, Render Postgres
+# или SQLite-файл на диске).
+PURCHASES_BY_USER: dict[int, int] = {}
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -93,6 +73,10 @@ async def successful_payment_handler(message: Message):
     payment = message.successful_payment
     # payment.invoice_payload содержит product_id, который мы передали при создании инвойса
     product_id = payment.invoice_payload
+    user_id = message.from_user.id
+
+    # Увеличиваем счётчик покупок пользователя (для вкладки "Профиль" в мини-аппе)
+    PURCHASES_BY_USER[user_id] = PURCHASES_BY_USER.get(user_id, 0) + 1
 
     # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
     await message.answer(
@@ -127,6 +111,18 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     return web.json_response({"invoice_link": invoice_link})
 
 
+async def profile_handler(request: web.Request) -> web.Response:
+    user_id_raw = request.query.get("user_id")
+
+    if not user_id_raw or not user_id_raw.isdigit():
+        return web.json_response({"error": "invalid user_id"}, status=400)
+
+    user_id = int(user_id_raw)
+    purchases = PURCHASES_BY_USER.get(user_id, 0)
+
+    return web.json_response({"purchases": purchases})
+
+
 async def index_handler(request: web.Request) -> web.Response:
     return web.FileResponse("static/index.html")
 
@@ -134,6 +130,7 @@ async def index_handler(request: web.Request) -> web.Response:
 def build_web_app() -> web.Application:
     app = web.Application()
     app.router.add_post("/create_invoice", create_invoice_handler)
+    app.router.add_get("/profile", profile_handler)
     app.router.add_get("/", index_handler)
     # Раздаём фронтенд (style.css, script.js) с того же домена.
     # CORS больше не нужен — всё работает на одном origin.
