@@ -8,8 +8,11 @@
 2. Поднимает рядом aiohttp веб-сервер с маршрутами:
    - POST /create_invoice — дёргает script.js, чтобы получить ссылку
      на инвойс и открыть нативное окно оплаты через tg.openInvoice().
-   - GET  /profile?user_id=... — отдаёт вкладке "Профиль" в мини-аппе
-     количество покупок пользователя.
+   - POST /open_case — выдаёт бесплатный одноразовый промокод
+     (Kichiro-XXXXX) со случайной скидкой (5/15/30/50%, вес выпадения
+     80:25:5:3).
+   - GET  /validate_promo?code=... — проверяет промокод (статический
+     или кейсовый) на экране оформления, до создания инвойса.
 
 Установка зависимостей (aiogram у тебя уже есть):
     pip install aiohttp aiohttp-cors
@@ -30,6 +33,8 @@
 
 import asyncio
 import logging
+import random
+import string
 
 import aiohttp
 from aiohttp import web
@@ -57,54 +62,113 @@ PORT = int(os.environ.get("PORT", 8080))  # Render подставит свой P
 PRODUCTS = {
     "dystopia": {
         "title": "Dystopia",
-        "description": "Цифровой доступ к закрытой коллекции",
-        "price": 2,
+        "description": (
+            "Dystopia — это премиальный игровой проект нового уровня, "
+            "созданный для тех, кто хочет больше, чем обычный опыт в игре. "
+            "Это система уникальных возможностей, расширенного функционала "
+            "и особого статуса, который выделяет тебя среди остальных игроков."
+        ),
+        "price": 150,
     }
 }
 
-# Доступные сроки доступа. Цена сейчас одинаковая для всех сроков (по просьбе),
-# но при желании можно задать разную цену — просто поменяй значения price ниже
-# и в create_invoice_handler бери цену из DURATIONS вместо PRODUCTS.
+# Доступные сроки доступа и их цена в звёздах (Telegram Stars).
+# Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
+# именно они прилетают в payload инвойса и в successful_payment.
 DURATIONS = {
-    "1w": {"label": "1 неделя", "price": 2},
-    "1m": {"label": "1 месяц", "price": 2},
-    "1y": {"label": "1 год", "price": 2},
+    "7d": {"label": "7 дней", "price": 150},
+    "30d": {"label": "30 дней", "price": 400},
+    "12m": {"label": "12 месяцев", "price": 3000},
 }
 
 # ====== Промокоды ======
-# Ключ — код промокода в нижнем регистре (сравнение регистронезависимое).
-# discount_percent — скидка в процентах от цены.
-# Чтобы добавить новый промокод, просто добавь ещё одну запись сюда.
+# Статические промокоды: ключ — код в нижнем регистре (сравнение
+# регистронезависимое), discount_percent — скидка в процентах.
+# Чтобы добавить новый постоянный промокод, просто добавь запись сюда.
 PROMO_CODES = {
     "idea67": {"discount_percent": 50},
 }
 
+# ====== Промокоды из кейса ======
+# Кейс выдаёт одноразовый промокод формата "Kichiro-XXXXX" (5 случайных
+# букв, в любом регистре, без цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса
+# выпадения, а не проценты от 100: с ними скидка 5% выпадает намного чаще,
+# чем 50%, в пропорции 80 : 25 : 5 : 3 (как и просили). Поменяй числа,
+# если нужны другие шансы.
+CASE_PRIZES = [
+    (5, 80),
+    (15, 25),
+    (30, 5),
+    (50, 3),
+]
+
+# Пока кейс бесплатный — открыть его можно сколько угодно раз без оплаты.
+# Когда понадобится сделать его платным, тут же можно списывать звёзды
+# перед вызовом roll_case_prize() в open_case_handler.
+CASE_IS_FREE = True
+
+# Хранилище сгенерированных кейсом промокодов: КОД (в верхнем регистре) ->
+# {"code": оригинальное написание, "discount_percent": int, "used": bool}.
+# Как и счётчики ниже — это память процесса, обнуляется при рестарте.
+# Для постоянного хранения в будущем стоит подключить БД.
+GENERATED_PROMOS: dict[str, dict] = {}
+
+
+def roll_case_prize() -> int:
+    """Выбирает размер скидки (%) с учётом весов CASE_PRIZES."""
+    discounts = [d for d, _ in CASE_PRIZES]
+    weights = [w for _, w in CASE_PRIZES]
+    return random.choices(discounts, weights=weights, k=1)[0]
+
+
+def generate_case_code() -> str:
+    """Генерирует уникальный код вида Kichiro-XXXXX (5 случайных букв,
+    без цифр) и резервирует его."""
+    while True:
+        suffix = "".join(random.choices(string.ascii_letters, k=5))
+        code = f"Kichiro-{suffix}"
+        if code.upper() not in GENERATED_PROMOS:
+            return code
+
+
+def resolve_promo(promo_code_raw: str | None) -> tuple[int, dict | None]:
+    """Проверяет промокод (статический или кейсовый) и считает скидку.
+
+    Возвращает (discount_percent, метаданные_или_None). Кейсовые коды
+    одноразовые: уже использованный код считается невалидным.
+    """
+    if not promo_code_raw:
+        return 0, None
+
+    raw = promo_code_raw.strip()
+
+    static = PROMO_CODES.get(raw.lower())
+    if static:
+        return static["discount_percent"], {"type": "static"}
+
+    key = raw.upper()
+    dynamic = GENERATED_PROMOS.get(key)
+    if dynamic and not dynamic["used"]:
+        return dynamic["discount_percent"], {"type": "case", "key": key}
+
+    return 0, None
+
 
 def apply_promo(base_price: int, promo_code: str | None) -> tuple[int, dict | None]:
-    """Считает итоговую цену в звёздах с учётом промокода.
+    """Считает итоговую цену в звёздах с учётом промокода (статического
+    или сгенерированного кейсом).
 
-    Возвращает (итоговая_цена, данные_промокода_или_None).
+    Возвращает (итоговая_цена, метаданные_промокода_или_None).
     Цена в Stars — это целое число, поэтому скидка округляется,
     а итоговая цена никогда не опускается ниже 1 звезды.
     """
-    if not promo_code:
+    discount_percent, promo_meta = resolve_promo(promo_code)
+    if promo_meta is None:
         return base_price, None
 
-    promo = PROMO_CODES.get(promo_code.strip().lower())
-    if not promo:
-        return base_price, None
-
-    discount = promo["discount_percent"]
-    final_price = round(base_price * (1 - discount / 100))
-    final_price = max(1, final_price)
-    return final_price, promo
-
-# Счётчик покупок на пользователя (для вкладки "Профиль" в мини-аппе).
-# ВАЖНО: это простое хранилище в памяти процесса — оно обнуляется при
-# каждом передеплое/рестарте на Render. Для честного постоянного счёта
-# в будущем стоит подключить настоящую БД (например, Render Postgres
-# или SQLite-файл на диске).
-PURCHASES_BY_USER: dict[int, int] = {}
+    final_price = max(1, round(base_price * (1 - discount_percent / 100)))
+    promo_meta = {**promo_meta, "discount_percent": discount_percent}
+    return final_price, promo_meta
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
@@ -139,14 +203,20 @@ async def pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
 @dp.message(F.successful_payment)
 async def successful_payment_handler(message: Message):
     payment = message.successful_payment
-    # payload теперь в формате "product_id:duration_code", например "dystopia:1m"
+    # payload теперь в формате "product_id:duration_code:promo_key",
+    # например "dystopia:30d:KICHIRO-A1B2C" (promo_key пустой, если
+    # промокод не применялся или был статическим).
     raw_payload = payment.invoice_payload
-    product_id, _, duration_code = raw_payload.partition(":")
+    parts = raw_payload.split(":")
+    product_id = parts[0] if len(parts) > 0 else ""
+    duration_code = parts[1] if len(parts) > 1 else ""
+    promo_key = parts[2] if len(parts) > 2 else ""
     duration_label = DURATIONS.get(duration_code, {}).get("label", "")
-    user_id = message.from_user.id
 
-    # Увеличиваем счётчик покупок пользователя (для вкладки "Профиль" в мини-аппе)
-    PURCHASES_BY_USER[user_id] = PURCHASES_BY_USER.get(user_id, 0) + 1
+    # Кейсовый промокод одноразовый — помечаем его использованным только
+    # теперь, когда оплата реально прошла (а не просто была создана ссылка).
+    if promo_key and promo_key in GENERATED_PROMOS:
+        GENERATED_PROMOS[promo_key]["used"] = True
 
     # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
@@ -165,7 +235,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "bad json"}, status=400)
 
     product_id = data.get("product_id")
-    duration_code = data.get("duration", "1m")
+    duration_code = data.get("duration", "30d")
     promo_code_raw = data.get("promo_code")
 
     product = PRODUCTS.get(product_id)
@@ -183,8 +253,9 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     final_price, promo = apply_promo(base_price, promo_code_raw)
 
     promo_applied = promo is not None
-    # Если промокод был передан, но не найден — сообщаем об этом клиенту,
-    # но всё равно создаём инвойс по полной цене, чтобы не блокировать покупку.
+    # Если промокод был передан, но не найден/уже использован — сообщаем
+    # об этом клиенту, но всё равно создаём инвойс по полной цене, чтобы
+    # не блокировать покупку.
     promo_invalid = bool(promo_code_raw) and not promo_applied
 
     title = product["title"]
@@ -192,9 +263,12 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     if promo_applied:
         description += f" (промокод -{promo['discount_percent']}%)"
 
-    # payload хранит только id товара и срок — промокод в payload не кладём,
-    # т.к. на скидку уже никак не влияет после создания инвойса.
-    payload = f"{product_id}:{duration_code}"  # вернётся в successful_payment.invoice_payload
+    # Для одноразовых кейсовых промокодов кладём их ключ в payload —
+    # так бот сможет пометить код использованным именно в момент успешной
+    # оплаты (successful_payment_handler), а не раньше, чтобы отменённая
+    # или неудавшаяся оплата не "сжигала" код впустую.
+    promo_key_for_payload = promo["key"] if promo_applied and promo.get("type") == "case" else ""
+    payload = f"{product_id}:{duration_code}:{promo_key_for_payload}"  # вернётся в successful_payment.invoice_payload
 
     invoice_link = await bot.create_invoice_link(
         title=title,
@@ -215,16 +289,42 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     })
 
 
-async def profile_handler(request: web.Request) -> web.Response:
-    user_id_raw = request.query.get("user_id")
+async def open_case_handler(request: web.Request) -> web.Response:
+    """Открывает бесплатный кейс и выдаёт одноразовый промокод.
 
-    if not user_id_raw or not user_id_raw.isdigit():
-        return web.json_response({"error": "invalid user_id"}, status=400)
+    Шансы выпадения скидок заданы весами в CASE_PRIZES (5%/15%/30%/50%
+    в пропорции 80:25:5:3). Код одноразовый и живёт, пока не будет
+    использован при успешной оплате (см. successful_payment_handler).
+    """
+    # Пока CASE_IS_FREE — открытие кейса ничего не стоит. Когда кейс
+    # станет платным, здесь нужно будет списать звёзды/проверить оплату
+    # перед тем, как выдавать промокод.
+    discount_percent = roll_case_prize()
+    code = generate_case_code()
+    GENERATED_PROMOS[code.upper()] = {
+        "code": code,
+        "discount_percent": discount_percent,
+        "used": False,
+    }
 
-    user_id = int(user_id_raw)
-    purchases = PURCHASES_BY_USER.get(user_id, 0)
+    return web.json_response({
+        "code": code,
+        "discount_percent": discount_percent,
+        "is_free": CASE_IS_FREE,
+    })
 
-    return web.json_response({"purchases": purchases})
+
+async def validate_promo_handler(request: web.Request) -> web.Response:
+    """Позволяет фронтенду проверить промокод (в т.ч. кейсовый) до покупки,
+    не создавая инвойс — используется на экране оформления при нажатии
+    «Применить»."""
+    code = request.query.get("code", "")
+    discount_percent, promo = resolve_promo(code)
+
+    return web.json_response({
+        "valid": promo is not None,
+        "discount_percent": discount_percent if promo else 0,
+    })
 
 
 async def avatar_handler(request: web.Request) -> web.Response:
@@ -269,7 +369,8 @@ async def index_handler(request: web.Request) -> web.Response:
 def build_web_app() -> web.Application:
     app = web.Application()
     app.router.add_post("/create_invoice", create_invoice_handler)
-    app.router.add_get("/profile", profile_handler)
+    app.router.add_post("/open_case", open_case_handler)
+    app.router.add_get("/validate_promo", validate_promo_handler)
     app.router.add_get("/avatar", avatar_handler)
     app.router.add_get("/", index_handler)
     # Раздаём фронтенд (style.css, script.js) с того же домена.
