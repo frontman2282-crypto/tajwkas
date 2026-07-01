@@ -618,6 +618,12 @@ const myPromosBtn = document.getElementById("myPromosBtn");
 const myPromosBack = document.getElementById("myPromosBack");
 const promoList = document.getElementById("promoList");
 const promoListEmpty = document.getElementById("promoListEmpty");
+const promoListActions = document.getElementById("promoListActions");
+const promoSelectModeBtn = document.getElementById("promoSelectModeBtn");
+const promoCancelSelectBtn = document.getElementById("promoCancelSelectBtn");
+const promoDeleteSelectedBtn = document.getElementById("promoDeleteSelectedBtn");
+const promoSelectedCount = document.getElementById("promoSelectedCount");
+const promoDeleteAllBtn = document.getElementById("promoDeleteAllBtn");
 
 // Определяет визуальную "редкость" промокода — та же логика, что и для
 // призов кейса, чтобы бирки выглядели одинаково по всему приложению.
@@ -643,20 +649,86 @@ function useMyPromoCode(code) {
   openCheckout(product, code);
 }
 
+// Текущий список загруженных кодов и выбранные для удаления — хранится
+// отдельно от DOM, чтобы удобно фильтровать/пересчитывать счётчик.
+let myPromoCodes = [];
+let selectedPromoCodes = new Set();
+let isSelectingPromos = false;
+
+function updatePromoSelectionUI() {
+  const count = selectedPromoCodes.size;
+  promoSelectedCount.textContent = String(count);
+  promoDeleteSelectedBtn.disabled = count === 0;
+
+  promoList.querySelectorAll(".promo-list-item").forEach((row) => {
+    const code = row.dataset.code;
+    row.classList.toggle("promo-list-item--selected", selectedPromoCodes.has(code));
+    const checkbox = row.querySelector(".promo-item-checkbox");
+    if (checkbox) checkbox.checked = selectedPromoCodes.has(code);
+  });
+}
+
+function enterPromoSelectMode() {
+  if (!myPromoCodes.length) return;
+  isSelectingPromos = true;
+  selectedPromoCodes.clear();
+  promoList.classList.add("promo-list--selecting");
+  promoSelectModeBtn.hidden = true;
+  promoDeleteAllBtn.hidden = true;
+  promoDeleteSelectedBtn.hidden = false;
+  promoCancelSelectBtn.hidden = false;
+  updatePromoSelectionUI();
+}
+
+function exitPromoSelectMode() {
+  isSelectingPromos = false;
+  selectedPromoCodes.clear();
+  promoList.classList.remove("promo-list--selecting");
+  promoSelectModeBtn.hidden = false;
+  promoDeleteAllBtn.hidden = false;
+  promoDeleteSelectedBtn.hidden = true;
+  promoCancelSelectBtn.hidden = true;
+  updatePromoSelectionUI();
+}
+
+function togglePromoSelected(code) {
+  if (selectedPromoCodes.has(code)) {
+    selectedPromoCodes.delete(code);
+  } else {
+    selectedPromoCodes.add(code);
+  }
+  updatePromoSelectionUI();
+}
+
 function renderMyPromoCodes(codes) {
+  myPromoCodes = codes;
   promoList.innerHTML = "";
 
   if (!codes.length) {
     setPromoListEmpty("Пока нет неиспользованных промокодов — открой кейс в магазине, чтобы получить скидку.");
+    promoListActions.hidden = true;
+    exitPromoSelectMode();
     return;
   }
 
   promoListEmpty.hidden = true;
+  promoListActions.hidden = false;
 
   codes.forEach((item, index) => {
     const row = document.createElement("div");
     row.className = "promo-list-item";
     row.style.setProperty("--promo-index", index);
+    row.dataset.code = item.code;
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.className = "promo-list-item-checkbox promo-item-checkbox";
+    checkbox.setAttribute("aria-label", "Выбрать промокод " + item.code);
+    checkbox.addEventListener("click", (e) => e.stopPropagation());
+    checkbox.addEventListener("change", () => {
+      togglePromoSelected(item.code);
+      tg?.HapticFeedback?.selectionChanged();
+    });
 
     const badge = document.createElement("span");
     badge.className = "promo-list-item-badge promo-badge--" + promoRarityKeyFor(item.discount_percent);
@@ -671,20 +743,39 @@ function renderMyPromoCodes(codes) {
     useBtn.type = "button";
     useBtn.textContent = "Использовать";
     useBtn.addEventListener("click", () => {
+      if (isSelectingPromos) {
+        togglePromoSelected(item.code);
+        tg?.HapticFeedback?.selectionChanged();
+        return;
+      }
       useMyPromoCode(item.code);
       tg?.HapticFeedback?.selectionChanged();
     });
 
+    row.appendChild(checkbox);
     row.appendChild(badge);
     row.appendChild(codeText);
     row.appendChild(useBtn);
+
+    // В режиме выбора клик по всей строке тоже переключает чекбокс —
+    // не нужно целиться точно в маленький квадратик.
+    row.addEventListener("click", () => {
+      if (!isSelectingPromos) return;
+      checkbox.checked = !checkbox.checked;
+      togglePromoSelected(item.code);
+      tg?.HapticFeedback?.selectionChanged();
+    });
+
     promoList.appendChild(row);
   });
+
+  updatePromoSelectionUI();
 }
 
 async function loadMyPromoCodes() {
   promoList.innerHTML = "";
   promoListEmpty.hidden = true;
+  exitPromoSelectMode();
 
   try {
     const response = await fetch("/my_promo_codes", {
@@ -697,9 +788,91 @@ async function loadMyPromoCodes() {
     const data = await response.json();
     renderMyPromoCodes(data.codes || []);
   } catch (err) {
+    promoListActions.hidden = true;
     setPromoListEmpty("Не удалось загрузить промокоды, попробуй ещё раз позже.");
   }
 }
+
+// Общий помощник для запроса подтверждения — использует нативный диалог
+// Telegram Mini App, если он доступен, иначе обычный confirm() браузера.
+function confirmAction(message) {
+  return new Promise((resolve) => {
+    if (tg?.showConfirm) {
+      tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
+    } else {
+      resolve(window.confirm(message));
+    }
+  });
+}
+
+async function deleteSelectedPromoCodes() {
+  const codes = Array.from(selectedPromoCodes);
+  if (!codes.length) return;
+
+  const confirmed = await confirmAction(
+    codes.length === 1
+      ? "Удалить выбранный промокод?"
+      : `Удалить выбранные промокоды (${codes.length})?`
+  );
+  if (!confirmed) return;
+
+  promoDeleteSelectedBtn.disabled = true;
+  try {
+    const response = await fetch("/delete_promo_codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ init_data: tg ? tg.initData : "", codes }),
+    });
+    if (!response.ok) throw new Error("bad response");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    await loadMyPromoCodes();
+  } catch (err) {
+    tg?.HapticFeedback?.notificationOccurred("error");
+    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
+  }
+}
+
+async function deleteAllPromoCodes() {
+  if (!myPromoCodes.length) return;
+
+  const confirmed = await confirmAction("Удалить все промокоды без возможности восстановления?");
+  if (!confirmed) return;
+
+  promoDeleteAllBtn.disabled = true;
+  try {
+    const response = await fetch("/delete_all_promo_codes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
+    });
+    if (!response.ok) throw new Error("bad response");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    await loadMyPromoCodes();
+  } catch (err) {
+    tg?.HapticFeedback?.notificationOccurred("error");
+    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
+  } finally {
+    promoDeleteAllBtn.disabled = false;
+  }
+}
+
+promoSelectModeBtn.addEventListener("click", () => {
+  enterPromoSelectMode();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+promoCancelSelectBtn.addEventListener("click", () => {
+  exitPromoSelectMode();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+promoDeleteSelectedBtn.addEventListener("click", () => {
+  deleteSelectedPromoCodes();
+});
+
+promoDeleteAllBtn.addEventListener("click", () => {
+  deleteAllPromoCodes();
+});
 
 myPromosBtn.addEventListener("click", () => {
   switchView("mypromos");
@@ -725,6 +898,11 @@ const caseAgainBtn = document.getElementById("caseAgainBtn");
 const caseStatus = document.getElementById("caseStatus");
 const caseReelWrap = document.getElementById("caseReelWrap");
 const caseReelTrack = document.getElementById("caseReelTrack");
+const casePrizeModal = document.getElementById("casePrizeModal");
+const casePrizeModalBackdrop = document.getElementById("casePrizeModalBackdrop");
+const casePrizeModalBadge = document.getElementById("casePrizeModalBadge");
+const casePrizeModalCode = document.getElementById("casePrizeModalCode");
+const casePrizeModalOk = document.getElementById("casePrizeModalOk");
 
 // Значения приза только для визуального наполнения рулетки декоями —
 // реальный приз всегда приходит с сервера (см. /open_case в bot.py),
@@ -774,7 +952,30 @@ function resetCaseStage() {
   caseOpenBtn.disabled = false;
   caseOpenBtn.textContent = "Открыть кейс";
   setCaseStatus("");
+  hideCasePrizeModal();
 }
+
+// Показывает мини-меню с полученным промокодом поверх экрана кейса —
+// появляется сразу после того, как рулетка докрутилась до приза.
+function showCasePrizeModal(discountPercent, code) {
+  casePrizeModalBadge.textContent = `-${discountPercent}%`;
+  casePrizeModalBadge.className = "case-prize-modal-badge " + rarityClassFor(discountPercent);
+  casePrizeModalCode.textContent = code;
+  casePrizeModal.hidden = false;
+}
+
+function hideCasePrizeModal() {
+  casePrizeModal.hidden = true;
+}
+
+casePrizeModalOk.addEventListener("click", () => {
+  hideCasePrizeModal();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+casePrizeModalBackdrop.addEventListener("click", () => {
+  hideCasePrizeModal();
+});
 
 // Строит длинную ленту призов со случайными "декоями" и настоящим призом
 // (discountPercent) где-то в середине, затем плавно прокручивает её так,
@@ -877,6 +1078,10 @@ async function openCase() {
 
     setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
     tg?.HapticFeedback?.notificationOccurred("success");
+
+    // Мини-меню с промокодом поверх экрана — появляется сразу после того,
+    // как кнопка "Открыть кейс ещё раз" уже видна.
+    showCasePrizeModal(data.discount_percent, data.code);
   } catch (err) {
     caseReelWrap.hidden = true;
     caseStage.classList.remove("case-stage--spinning");
@@ -896,6 +1101,7 @@ caseEntryCard.addEventListener("click", () => {
 });
 
 caseBack.addEventListener("click", () => {
+  hideCasePrizeModal();
   switchView("shop");
   tg?.HapticFeedback?.selectionChanged();
 });
