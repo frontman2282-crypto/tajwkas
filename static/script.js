@@ -6,7 +6,7 @@ const PRODUCTS = [
     id: "dystopia",
     title: "Dystopia",
     subtitle: "Доступ к закрытой коллекции",
-    price: 1,
+    price: 2,
     initial: "D",
     badges: ["UNDETECTED"],
   },
@@ -14,10 +14,17 @@ const PRODUCTS = [
 
 // Сроки доступа — должны совпадать с DURATIONS в bot.py
 const DURATIONS = [
-  { code: "1w", label: "1 неделя", price: 1 },
-  { code: "1m", label: "1 месяц", price: 1 },
-  { code: "1y", label: "1 год", price: 1 },
+  { code: "1w", label: "1 неделя", price: 2 },
+  { code: "1m", label: "1 месяц", price: 2 },
+  { code: "1y", label: "1 год", price: 2 },
 ];
+
+// Промокоды — только для мгновенного предпросмотра скидки в интерфейсе.
+// Настоящая цена и проверка промокода всегда считаются на сервере
+// (в bot.py), клиенту в этом вопросе не доверяем.
+const PROMO_CODES = {
+  idea67: { discount_percent: 50 },
+};
 
 // Иконка звезды (Telegram Stars) — используется вместо символа "★",
 // который выглядит по-разному в разных шрифтах/системах
@@ -31,6 +38,15 @@ if (tg) {
   tg.expand();
   tg.setHeaderColor("#050208");
   tg.setBackgroundColor("#050208");
+  // Запрещаем системный жест "потянуть вниз, чтобы закрыть" — без этого
+  // на iOS можно было утащить весь Mini App вниз и увидеть пустоту под
+  // интерфейсом. Метод есть только в Bot API 7.7+, поэтому оборачиваем
+  // в try/catch на случай старых клиентов Telegram.
+  try {
+    tg.disableVerticalSwipes?.();
+  } catch (err) {
+    // старая версия клиента — просто игнорируем
+  }
 }
 
 // ====== Сплэш / плавное появление ======
@@ -128,9 +144,23 @@ function renderProducts() {
   });
 }
 
+function getFinalPrice(basePrice, discountPercent) {
+  if (!discountPercent) return basePrice;
+  return Math.max(1, Math.round(basePrice * (1 - discountPercent / 100)));
+}
+
 function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-  buyBtnText.innerHTML = `Купить за ${duration.price} ${STAR_ICON_SVG}`;
+  const finalPrice = getFinalPrice(duration.price, checkoutDiscountPercent);
+
+  if (checkoutDiscountPercent > 0 && finalPrice < duration.price) {
+    checkoutOldPrice.textContent = `${duration.price} ★`;
+    checkoutOldPrice.hidden = false;
+  } else {
+    checkoutOldPrice.hidden = true;
+  }
+
+  buyBtnText.innerHTML = `Купить за ${finalPrice} ${STAR_ICON_SVG}`;
 }
 
 function setCardStatus(statusEl, text, type = "") {
@@ -138,7 +168,12 @@ function setCardStatus(statusEl, text, type = "") {
   statusEl.className = "card-status" + (type ? " " + type : "");
 }
 
-async function getInvoiceLink(productId, durationCode) {
+function setPromoStatus(text, type = "") {
+  checkoutPromoStatus.textContent = text;
+  checkoutPromoStatus.className = "promo-status" + (type ? " " + type : "");
+}
+
+async function getInvoiceLink(productId, durationCode, promoCode) {
   const initData = tg ? tg.initData : "";
 
   const response = await fetch("/create_invoice", {
@@ -147,6 +182,7 @@ async function getInvoiceLink(productId, durationCode) {
     body: JSON.stringify({
       product_id: productId,
       duration: durationCode,
+      promo_code: promoCode || undefined,
       init_data: initData,
     }),
   });
@@ -160,7 +196,7 @@ async function getInvoiceLink(productId, durationCode) {
     throw new Error("Сервер не вернул ссылку на инвойс");
   }
 
-  return data.invoice_link;
+  return data;
 }
 
 async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
@@ -176,7 +212,14 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
   setCardStatus(statusEl, "");
 
   try {
-    const invoiceLink = await getInvoiceLink(product.id, durationCode);
+    const invoiceData = await getInvoiceLink(product.id, durationCode, checkoutPromoCode);
+    const invoiceLink = invoiceData.invoice_link;
+
+    // Сервер — источник истины по промокодам. Если он не распознал код,
+    // который клиент посчитал валидным, сообщаем об этом честно.
+    if (checkoutPromoCode && invoiceData.promo_invalid) {
+      setPromoStatus("Промокод не найден, покупка по полной цене", "error");
+    }
 
     tg.openInvoice(invoiceLink, (status) => {
       buyBtn.disabled = false;
@@ -210,15 +253,29 @@ const checkoutBadges = document.getElementById("checkoutBadges");
 const checkoutDurations = document.getElementById("checkoutDurations");
 const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
 const checkoutBuyText = document.getElementById("checkoutBuyText");
+const checkoutOldPrice = document.getElementById("checkoutOldPrice");
 const checkoutStatus = document.getElementById("checkoutStatus");
 const checkoutBack = document.getElementById("checkoutBack");
+const checkoutPromoInput = document.getElementById("checkoutPromoInput");
+const checkoutPromoApply = document.getElementById("checkoutPromoApply");
+const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
 
 let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
+let checkoutPromoCode = null;
+let checkoutDiscountPercent = 0;
 
 function openCheckout(product) {
   checkoutProduct = product;
   checkoutDuration = DURATIONS[0].code;
+  checkoutPromoCode = null;
+  checkoutDiscountPercent = 0;
+  checkoutPromoInput.value = "";
+  checkoutPromoApply.textContent = "Применить";
+  checkoutPromoApply.classList.remove("promo-apply-btn--applied");
+  checkoutPromoApply.disabled = false;
+  checkoutPromoInput.disabled = false;
+  setPromoStatus("");
 
   checkoutTitle.textContent = product.title;
   checkoutInitial.textContent = product.initial;
@@ -263,6 +320,65 @@ checkoutDurations.addEventListener("click", (e) => {
   tg?.HapticFeedback?.selectionChanged();
 });
 
+function applyPromoCode() {
+  const rawCode = checkoutPromoInput.value.trim();
+
+  if (!rawCode) {
+    setPromoStatus("Введите промокод", "error");
+    return;
+  }
+
+  const promo = PROMO_CODES[rawCode.toLowerCase()];
+
+  if (!promo) {
+    checkoutPromoCode = null;
+    checkoutDiscountPercent = 0;
+    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
+    checkoutPromoApply.textContent = "Применить";
+    checkoutPromoInput.disabled = false;
+    setPromoStatus("Промокод не найден", "error");
+    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    tg?.HapticFeedback?.notificationOccurred("error");
+    return;
+  }
+
+  checkoutPromoCode = rawCode;
+  checkoutDiscountPercent = promo.discount_percent;
+  checkoutPromoApply.textContent = "Применено";
+  checkoutPromoApply.classList.add("promo-apply-btn--applied");
+  checkoutPromoInput.disabled = true;
+  setPromoStatus(`Скидка ${promo.discount_percent}% применена`, "success");
+  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+  tg?.HapticFeedback?.notificationOccurred("success");
+}
+
+checkoutPromoApply.addEventListener("click", () => {
+  if (!checkoutProduct) return;
+
+  // Повторный клик по уже применённому промокоду снимает его —
+  // так пользователь может вернуться к полной цене.
+  if (checkoutPromoCode) {
+    checkoutPromoCode = null;
+    checkoutDiscountPercent = 0;
+    checkoutPromoInput.disabled = false;
+    checkoutPromoInput.value = "";
+    checkoutPromoApply.textContent = "Применить";
+    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
+    setPromoStatus("");
+    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    return;
+  }
+
+  applyPromoCode();
+});
+
+checkoutPromoInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    applyPromoCode();
+  }
+});
+
 checkoutBuyBtn.addEventListener("click", () => {
   if (!checkoutProduct) return;
   handleBuy(checkoutProduct, checkoutDuration, checkoutBuyBtn, checkoutBuyText, checkoutStatus);
@@ -290,6 +406,13 @@ function switchView(target) {
   // это переход внутри магазина, а не отдельный раздел
   const activeTabKey = target === "checkout" ? "shop" : target;
   tabs.forEach((t) => t.classList.toggle("tab--active", t.dataset.view === activeTabKey));
+
+  // Сбрасываем прокрутку контейнера .app в начало при каждом переключении
+  // экрана. Раньше этого не было: если пользователь успевал прокрутить
+  // страницу вниз, следующий открытый экран (например, чекаут) рендерился
+  // корректно, но оказывался вне видимой области — выглядело так, будто
+  // "интерфейс не открылся". Это и была причина бага "через раз".
+  app.scrollTop = 0;
 
   if (target === "profile") {
     refreshProfile();
