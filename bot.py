@@ -13,6 +13,10 @@
      выпадения 110:70:25:3:1).
    - GET  /validate_promo?code=... — проверяет промокод (статический
      или кейсовый) на экране оформления, до создания инвойса.
+   - POST /delete_promo_codes — удаляет выбранные кейсовые промокоды
+     текущего пользователя (мультивыбор в "Моих промокодах").
+   - POST /delete_all_promo_codes — удаляет вообще все неиспользованные
+     кейсовые промокоды текущего пользователя.
 
 Установка зависимостей (aiogram у тебя уже есть):
     pip install aiohttp aiohttp-cors
@@ -94,19 +98,18 @@ PROMO_CODES = {
 # ====== Промокоды из кейса ======
 # Кейс выдаёт одноразовый промокод формата "Kichiro-XXXXX" (5 случайных
 # букв, в любом регистре, без цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса
-# выпадения, а не проценты от 100. При сумме весов 200 фактические шансы:
-# 5% = 52.5%, 10% = 37.5%, 15% = 7.0%, 30% = 2.5%, 50% = 0.5%.
-# Раньше 15% выпадал заметно чаще (12.0%), из-за чего создавалось
-# впечатление, что этот приз "слишком частый" — вес понизили примерно
-# вдвое и слегка увеличили 30%, чтобы редкие призы ощущались реже, а
-# крупный джекпот (50%) остался максимально редким. Выбор по-прежнему
-# полностью случайный (random.choices) — поменяй числа, если нужны
-# другие шансы.
+# выпадения, а не проценты от 100. При сумме весов 259 фактические шансы:
+# 5% = 57.9%, 10% = 38.6%, 15% = 1.9%, 30% = 1.2%, 50% = 0.4%.
+# Шансы на 15% и 50% дополнительно понижены (было 7.0% и 0.5%
+# соответственно) — вес 15% уменьшен почти в 3 раза, а веса частых призов
+# (5% и 10%) увеличены, чтобы общая сумма выросла и редкие призы стали
+# выпадать ещё реже. Выбор по-прежнему полностью случайный
+# (random.choices) — поменяй числа, если нужны другие шансы.
 CASE_PRIZES = [
-    (5, 105),
-    (10, 75),
-    (15, 14),
-    (30, 5),
+    (5, 150),
+    (10, 100),
+    (15, 5),
+    (30, 3),
     (50, 1),
 ]
 
@@ -409,6 +412,62 @@ async def my_promo_codes_handler(request: web.Request) -> web.Response:
     return web.json_response({"codes": codes})
 
 
+async def delete_promo_codes_handler(request: web.Request) -> web.Response:
+    """Удаляет выбранные пользователем кейсовые промокоды (мультивыбор
+    в "Моих промокодах"). Удалить можно только свои и только
+    неиспользованные коды — код чужого пользователя или уже
+    использованный просто игнорируется.
+    """
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = resolve_user_id(body.get("init_data"))
+    raw_codes = body.get("codes")
+    if user_id is None or not isinstance(raw_codes, list):
+        return web.json_response({"deleted": []})
+
+    deleted = []
+    for raw_code in raw_codes:
+        key = str(raw_code).strip().upper()
+        promo = GENERATED_PROMOS.get(key)
+        if promo and promo.get("user_id") == user_id and not promo["used"]:
+            del GENERATED_PROMOS[key]
+            deleted.append(key)
+
+    if deleted:
+        _save_generated_promos()
+
+    return web.json_response({"deleted": deleted})
+
+
+async def delete_all_promo_codes_handler(request: web.Request) -> web.Response:
+    """Удаляет ВСЕ неиспользованные кейсовые промокоды текущего
+    пользователя — кнопка "Удалить все" в "Моих промокодах"."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = resolve_user_id(body.get("init_data"))
+    if user_id is None:
+        return web.json_response({"deleted": []})
+
+    deleted = [
+        key
+        for key, promo in GENERATED_PROMOS.items()
+        if promo.get("user_id") == user_id and not promo["used"]
+    ]
+    for key in deleted:
+        del GENERATED_PROMOS[key]
+
+    if deleted:
+        _save_generated_promos()
+
+    return web.json_response({"deleted": deleted})
+
+
 async def validate_promo_handler(request: web.Request) -> web.Response:
     """Позволяет фронтенду проверить промокод (в т.ч. кейсовый) до покупки,
     не создавая инвойс — используется на экране оформления при нажатии
@@ -484,6 +543,8 @@ def build_web_app() -> web.Application:
     app.router.add_post("/create_invoice", create_invoice_handler)
     app.router.add_post("/open_case", open_case_handler)
     app.router.add_post("/my_promo_codes", my_promo_codes_handler)
+    app.router.add_post("/delete_promo_codes", delete_promo_codes_handler)
+    app.router.add_post("/delete_all_promo_codes", delete_all_promo_codes_handler)
     app.router.add_get("/validate_promo", validate_promo_handler)
     app.router.add_get("/avatar", avatar_handler)
     app.router.add_get("/", index_handler)
