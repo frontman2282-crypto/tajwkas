@@ -8,7 +8,7 @@ const PRODUCTS = [
     subtitle: "Премиальный статус и расширенные возможности",
     description:
       "Dystopia — это премиальный игровой проект нового уровня, созданный для тех, кто хочет больше, чем обычный опыт в игре. Это система уникальных возможностей, расширенного функционала и особого статуса, который выделяет тебя среди остальных игроков.",
-    price: 150,
+    price: 2,
     initial: "D",
     badges: ["UNDETECTED"],
   },
@@ -18,9 +18,9 @@ const PRODUCTS = [
 // Цены указаны в звёздах (Telegram Stars) — поменяй значения price
 // на свои под каждый тариф.
 const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 150 },
-  { code: "30d", label: "30 дней", price: 400 },
-  { code: "12m", label: "12 месяцев", price: 3000 },
+  { code: "7d", label: "7 дней", price: 2 },
+  { code: "30d", label: "30 дней", price: 2 },
+  { code: "12m", label: "12 месяцев", price: 2 },
 ];
 
 // Промокод проверяется и считается всегда на сервере (в bot.py) — это
@@ -307,10 +307,11 @@ const checkoutPromoInput = document.getElementById("checkoutPromoInput");
 const checkoutPromoApply = document.getElementById("checkoutPromoApply");
 const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
 
-// Элементы, у которых есть CSS-анимация появления (opacity 0 -> 1 через
-// "forwards"). Нужны отдельным списком, чтобы при каждом открытии экрана
-// принудительно перезапускать им анимацию (см. openCheckout ниже) — так же,
-// как это уже сделано для caseResult в openCase().
+// Элементы, у которых есть CSS-анимация появления, навешиваемая временным
+// классом .co-anim-in (см. playCheckoutEntrance). Базовый CSS теперь всегда
+// держит их видимыми (opacity: 1) — анимация лишь временно "занижает"
+// opacity на время своего проигрывания, а не является единственным
+// способом их показать.
 const checkoutAnimatedEls = [
   viewCheckout.querySelector(".checkout-hero"),
   viewCheckout.querySelector(".description-card"),
@@ -318,30 +319,41 @@ const checkoutAnimatedEls = [
   checkoutBuyBtn,
 ].filter(Boolean);
 
+let checkoutAnimSafetyTimer = null;
+
+// Проигрывает анимацию появления карточек экрана оформления. Класс
+// .co-anim-in снимается и добавляется заново при КАЖДОМ вызове (с reflow
+// между ними), чтобы анимация гарантированно перезапускалась даже при
+// повторном открытии одного и того же экрана — переключение класса
+// надёжнее в Telegram WebView, чем просто display: none -> block.
+//
+// Плюс: если по какой-то причине анимация не доиграет и не снимет класс
+// сама (animation-fill-mode: both держит финальный кадр, но мало ли),
+// через небольшую страховочную паузу класс снимается принудительно —
+// контент в любом случае останется видимым, потому что базовый CSS для
+// этих элементов — opacity: 1, а не 0.
+function playCheckoutEntrance() {
+  checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
+  void viewCheckout.offsetHeight; // форсируем reflow перед повторным добавлением класса
+
+  checkoutAnimatedEls.forEach((el, index) => {
+    el.style.animationDelay = `${index * 70 + 60}ms`;
+    el.classList.add("co-anim-in");
+  });
+
+  clearTimeout(checkoutAnimSafetyTimer);
+  checkoutAnimSafetyTimer = setTimeout(() => {
+    checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
+  }, 900);
+}
+
 let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
 let checkoutPromoCode = null;
 let checkoutDiscountPercent = 0;
 
 function openCheckout(product) {
-  // Принудительно перезапускаем анимацию появления карточек экрана
-  // оформления при КАЖДОМ открытии. Раньше анимация запускалась только
-  // за счёт переключения view (display: none -> block), но если её уже
-  // "отыграли" один раз и она застыла в конечном состоянии (opacity: 1
-  // через animation-fill-mode: forwards), при повторном показе того же
-  // элемента браузер не всегда переигрывает её заново — из-за этого
-  // opacity так и оставался 0, и экран выглядел полностью пустым, кроме
-  // кнопки "Купить" (у неё анимация трогает только transform, а не
-  // opacity, поэтому она всегда была видна). Явный сброс через
-  // "animation: none" + reflow + возврат анимации — тот же приём, что
-  // уже используется для caseResult в openCase().
-  checkoutAnimatedEls.forEach((el, index) => {
-    el.style.animation = "none";
-    el.style.animationDelay = "";
-    void el.offsetHeight; // форсируем reflow, чтобы анимация точно перезапустилась
-    el.style.animation = "";
-    el.style.animationDelay = `${index * 70 + 60}ms`;
-  });
+  playCheckoutEntrance();
 
   checkoutProduct = product;
   checkoutDuration = DURATIONS[0].code;
