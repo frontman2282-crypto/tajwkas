@@ -945,24 +945,38 @@ body.keyboard-open .tabbar {
   padding: 20px;
   margin-bottom: 10px;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
-  opacity: 0;
-  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+.checkout-hero,
+.description-card,
 .view--checkout .option-group {
-  opacity: 0;
-  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* opacity: 1 по умолчанию — контент ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не доиграет в конкретном
+     WebView. Раньше базовым состоянием было opacity: 0, и видимость
+     полностью зависела от того, доиграет ли CSS-анимация — если нет,
+     контент оставался невидимым навсегда. Теперь анимация — это только
+     "бонус" поверх уже видимого контента, а не единственный способ его
+     показать. */
+  opacity: 1;
 }
 
-.view--checkout .buy-btn {
+/* Анимация появления навешивается временным классом .co-anim-in из
+   script.js (см. playCheckoutEntrance) при каждом открытии экрана — явное
+   добавление/удаление класса гораздо надёжнее перезапускает CSS-анимацию
+   в Telegram WebView, чем просто переключение display: none -> block. */
+.checkout-hero.co-anim-in,
+.description-card.co-anim-in,
+.view--checkout .option-group.co-anim-in {
+  opacity: 0;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.view--checkout .buy-btn.co-anim-in {
   animation: rise-in-transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
-/* Задержки каскада (animation-delay) для .checkout-hero, .description-card,
-   .option-group и .buy-btn теперь выставляются из script.js (см.
-   checkoutAnimatedEls в openCheckout) — это и надёжнее (гарантированный
-   рестарт анимации при каждом открытии экрана), и корректнее по
-   индексам: раньше здесь были :nth-of-type(1)/(2) селекторы, которые на
+/* Задержки каскада (animation-delay) выставляются из script.js по индексу
+   элемента — раньше здесь были селекторы :nth-of-type(1)/(2), которые на
    самом деле не совпадали ни с одним .option-group (nth-of-type считает
    позицию среди ВСЕХ div-соседей, а не среди элементов с классом
    .option-group — первые два div-а перед тарифами это .checkout-hero и
@@ -1017,8 +1031,6 @@ body.keyboard-open .tabbar {
   border-radius: 18px;
   padding: 18px 20px;
   margin-bottom: 10px;
-  opacity: 0;
-  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .description-card-label {
