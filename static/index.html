@@ -43,6 +43,40 @@
         <h1 class="topbar-title">Магазин</h1>
       </header>
 
+      <div class="shop-features">
+        <button class="case-entry-card" id="caseEntryCard" type="button">
+          <span class="case-entry-free">FREE</span>
+          <span class="case-entry-icon">
+            <svg class="case-box-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <defs>
+                <linearGradient id="caseLidGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#3c3c42"/>
+                  <stop offset="100%" stop-color="#18181b"/>
+                </linearGradient>
+                <linearGradient id="caseBodyGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#c4c4cc"/>
+                  <stop offset="100%" stop-color="#88888f"/>
+                </linearGradient>
+              </defs>
+              <ellipse class="case-box-glow" cx="100" cy="98" rx="60" ry="36"/>
+              <path class="case-box-body" d="M36 90 L36 146 Q36 152 41 155 L94 182 Q100 185 106 182 L159 155 Q164 152 164 146 L164 90 L100 124 Z" fill="url(#caseBodyGrad)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/>
+              <path class="case-box-seam" d="M100 124 L100 185" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
+              <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidGrad)" stroke="rgba(0,0,0,0.3)" stroke-width="2"/>
+              <g class="case-box-lock">
+                <rect x="87" y="103" width="26" height="22" rx="5" fill="#1c1c1f" stroke="#f1f1f4" stroke-width="2"/>
+                <circle cx="100" cy="114" r="3" fill="#f1f1f4"/>
+              </g>
+              <g class="case-box-sparkles">
+                <path d="M50 58 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3z"/>
+                <path d="M154 68 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+              </g>
+            </svg>
+          </span>
+          <span class="case-entry-title">Кейс</span>
+          <span class="case-entry-sub">Промокод до -50%</span>
+        </button>
+      </div>
+
       <div id="productList" class="product-grid">
         <!-- Карточки товаров рендерятся из script.js -->
       </div>
@@ -64,22 +98,6 @@
         </div>
         <div class="profile-name" id="profileName">—</div>
         <div class="profile-username" id="profileUsername">@—</div>
-      </div>
-
-      <div class="case-card">
-        <span class="case-card-eyebrow">Бесплатный кейс</span>
-        <h2 class="case-card-title">Кейс с промокодом</h2>
-        <p class="case-card-desc">Открой кейс и получи промокод на скидку — от 5% до 50%. Код одноразовый.</p>
-
-        <button class="case-open-btn" id="caseOpenBtn" type="button">Открыть кейс</button>
-
-        <div class="case-result" id="caseResult" hidden>
-          <span class="case-result-badge" id="caseResultBadge">-5%</span>
-          <span class="case-result-code" id="caseResultCode">Kichiro-XXXXX</span>
-          <button class="case-copy-btn" id="caseCopyBtn" type="button">Скопировать</button>
-        </div>
-
-        <p class="case-status" id="caseStatus"></p>
       </div>
     </section>
 
@@ -126,7 +144,7 @@
         <span class="option-group-label">Способ оплаты</span>
         <div class="payment-options">
           <div class="payment-option payment-option--selected">
-            <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7.1-6.3-3.9-6.3 3.9 1.7-7.1-5.5-4.7 7.2-.6z"/></svg>
+            <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
             <span class="payment-option-label">Telegram Stars</span>
             <span class="payment-option-check">✓</span>
           </div>
@@ -138,6 +156,65 @@
         <span class="buy-btn-text" id="checkoutBuyText">Купить</span>
       </button>
       <p class="card-status" id="checkoutStatus"></p>
+    </section>
+
+    <!-- ===== Экран: КЕЙС ===== -->
+    <section id="view-case" class="view view--checkout">
+      <header class="checkout-topbar">
+        <button class="back-btn" id="caseBack" type="button" aria-label="Назад">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+        <div>
+          <span class="topbar-eyebrow">Бесплатный кейс</span>
+          <h1 class="topbar-title">Кейс с промокодом</h1>
+        </div>
+      </header>
+
+      <div class="case-stage" id="caseStage">
+        <svg class="case-box-svg case-box-svg--big" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <defs>
+            <linearGradient id="caseLidGradBig" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#3c3c42"/>
+              <stop offset="100%" stop-color="#18181b"/>
+            </linearGradient>
+            <linearGradient id="caseBodyGradBig" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#c4c4cc"/>
+              <stop offset="100%" stop-color="#88888f"/>
+            </linearGradient>
+          </defs>
+          <ellipse class="case-box-glow" cx="100" cy="98" rx="66" ry="40"/>
+          <path class="case-box-body" d="M36 90 L36 146 Q36 152 41 155 L94 182 Q100 185 106 182 L159 155 Q164 152 164 146 L164 90 L100 124 Z" fill="url(#caseBodyGradBig)" stroke="rgba(0,0,0,0.18)" stroke-width="2"/>
+          <path class="case-box-seam" d="M100 124 L100 185" stroke="rgba(0,0,0,0.2)" stroke-width="2"/>
+          <path class="case-box-lid" d="M32 84 L100 48 L168 84 L100 120 Z" fill="url(#caseLidGradBig)" stroke="rgba(0,0,0,0.3)" stroke-width="2"/>
+          <g class="case-box-lock">
+            <rect x="87" y="103" width="26" height="22" rx="5" fill="#1c1c1f" stroke="#f1f1f4" stroke-width="2"/>
+            <circle cx="100" cy="114" r="3" fill="#f1f1f4"/>
+          </g>
+          <g class="case-box-sparkles">
+            <path d="M48 56 l3 9 9 3 -9 3 -3 9 -3 -9 -9 -3 9 -3z"/>
+            <path d="M156 66 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+            <path d="M100 30 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
+          </g>
+        </svg>
+        <p class="case-stage-desc">Открой кейс и получи одноразовый промокод на скидку — от 5% до 50%.</p>
+      </div>
+
+      <div class="case-reel-wrap" id="caseReelWrap" hidden>
+        <div class="case-reel-fade case-reel-fade--left"></div>
+        <div class="case-reel-fade case-reel-fade--right"></div>
+        <div class="case-reel-pointer"></div>
+        <div class="case-reel-track" id="caseReelTrack"></div>
+      </div>
+
+      <button class="case-open-btn" id="caseOpenBtn" type="button">Открыть кейс</button>
+
+      <div class="case-result" id="caseResult" hidden>
+        <span class="case-result-badge" id="caseResultBadge">-5%</span>
+        <span class="case-result-code" id="caseResultCode">Kichiro-XXXXX</span>
+        <button class="case-copy-btn" id="caseCopyBtn" type="button">Скопировать</button>
+      </div>
+
+      <p class="case-status" id="caseStatus"></p>
     </section>
 
   </div>
@@ -174,7 +251,7 @@
           </div>
         </div>
         <div class="card-row-price">
-          <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l2.9 6.6 7.2.6-5.5 4.7 1.7 7.1-6.3-3.9-6.3 3.9 1.7-7.1-5.5-4.7 7.2-.6z"/></svg>
+          <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
           <span class="price-value"></span>
         </div>
         <span class="card-row-chevron">›</span>
