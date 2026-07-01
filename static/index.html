@@ -186,6 +186,23 @@
     </button>
   </template>
 
+  <!-- Аварийный фолбэк, независимый от script.js. У основного скрипта уже
+       есть свой предохранитель (скрыть сплэш максимум через ~2.2с), но он
+       не сработает, если script.js вообще не выполнился — не загрузился
+       (плохая сеть, неверный путь на хостинге), заблокирован, либо упал с
+       ошибкой ДО того, как успел зарегистрировать свой таймер. В этом
+       случае сплэш так и остаётся висеть — та самая "бесконечная загрузка".
+       Этот инлайн-скрипт ни от чего не зависит и гарантированно скрывает
+       сплэш через 4 секунды в любом случае. -->
+  <script>
+    setTimeout(function () {
+      var splashEl = document.getElementById("splash");
+      var appEl = document.getElementById("app");
+      if (splashEl) splashEl.classList.add("splash--hidden");
+      if (appEl) appEl.classList.add("app--ready");
+    }, 4000);
+  </script>
+
   <script src="script.js"></script>
 </body>
 </html>
