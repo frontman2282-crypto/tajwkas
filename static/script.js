@@ -307,12 +307,42 @@ const checkoutPromoInput = document.getElementById("checkoutPromoInput");
 const checkoutPromoApply = document.getElementById("checkoutPromoApply");
 const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
 
+// Элементы, у которых есть CSS-анимация появления (opacity 0 -> 1 через
+// "forwards"). Нужны отдельным списком, чтобы при каждом открытии экрана
+// принудительно перезапускать им анимацию (см. openCheckout ниже) — так же,
+// как это уже сделано для caseResult в openCase().
+const checkoutAnimatedEls = [
+  viewCheckout.querySelector(".checkout-hero"),
+  viewCheckout.querySelector(".description-card"),
+  ...viewCheckout.querySelectorAll(".option-group"),
+  checkoutBuyBtn,
+].filter(Boolean);
+
 let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
 let checkoutPromoCode = null;
 let checkoutDiscountPercent = 0;
 
 function openCheckout(product) {
+  // Принудительно перезапускаем анимацию появления карточек экрана
+  // оформления при КАЖДОМ открытии. Раньше анимация запускалась только
+  // за счёт переключения view (display: none -> block), но если её уже
+  // "отыграли" один раз и она застыла в конечном состоянии (opacity: 1
+  // через animation-fill-mode: forwards), при повторном показе того же
+  // элемента браузер не всегда переигрывает её заново — из-за этого
+  // opacity так и оставался 0, и экран выглядел полностью пустым, кроме
+  // кнопки "Купить" (у неё анимация трогает только transform, а не
+  // opacity, поэтому она всегда была видна). Явный сброс через
+  // "animation: none" + reflow + возврат анимации — тот же приём, что
+  // уже используется для caseResult в openCase().
+  checkoutAnimatedEls.forEach((el, index) => {
+    el.style.animation = "none";
+    el.style.animationDelay = "";
+    void el.offsetHeight; // форсируем reflow, чтобы анимация точно перезапустилась
+    el.style.animation = "";
+    el.style.animationDelay = `${index * 70 + 60}ms`;
+  });
+
   checkoutProduct = product;
   checkoutDuration = DURATIONS[0].code;
   checkoutPromoCode = null;
