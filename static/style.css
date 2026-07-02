@@ -338,14 +338,35 @@ body.keyboard-open .tabbar {
   z-index: 1;
   display: none;
   padding: 28px 20px 12px;
-  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  /* opacity: 1 по умолчанию — экран ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не перезапустится. Раньше
+     видимость целиком зависела от автоматического запуска CSS-анимации
+     при смене display: none -> block. Это отлично работало при ПЕРВОМ
+     показе экрана (после загрузки страницы), но при повторном заходе на
+     тот же экран (например, второй раз открыть "Мои промокоды" или
+     "Оформление заказа") Telegram WebView не всегда перезапускал ту же
+     самую именованную CSS-анимацию повторно — из-за этого при втором
+     открытии контент секунду-две как будто "не появлялся". Теперь это
+     невозможно в принципе: базовое состояние — видимый экран, а анимация
+     — только бонус поверх него. */
+  opacity: 1;
 }
 
 .view--active {
   display: block;
 }
 
-.view--checkout.view--active {
+/* Анимация появления навешивается временным классом .view-anim-in из
+   switchView() в script.js при КАЖДОМ переключении экрана — класс явно
+   снимается, форсируется reflow и добавляется заново, что гарантированно
+   перезапускает анимацию в Telegram WebView. Просто переключения
+   display: none -> block для этого недостаточно (см. опыт с co-anim-in
+   в checkout ниже — та же проблема, тот же приём для её решения). */
+.view--active.view-anim-in {
+  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view--checkout.view--active.view-anim-in {
   animation: view-in-push 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -1641,6 +1662,9 @@ body.keyboard-open .tabbar {
   inset: 0;
   background: rgba(8, 8, 10, 0.7);
   backdrop-filter: blur(6px);
+  /* opacity: 1 — страховка на случай, если анимация ниже по какой-то
+     причине не запустится/не перезапустится повторно. */
+  opacity: 1;
   animation: case-prize-backdrop-in 0.25s ease forwards;
 }
 
@@ -1664,6 +1688,7 @@ body.keyboard-open .tabbar {
   background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
   text-align: center;
+  opacity: 1;
   animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
