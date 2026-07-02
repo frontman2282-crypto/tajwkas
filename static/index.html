@@ -13,7 +13,7 @@
        сервере интерфейс мог "через раз" открываться в неконсистентном виде
        (например, разметка есть, а стили/скрипт — от старой версии или не
        успели прогрузиться). При каждом деплое меняй значение v=. -->
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -198,12 +198,17 @@
 
       <div class="option-group">
         <span class="option-group-label">Способ оплаты</span>
-        <div class="payment-options">
-          <div class="payment-option payment-option--selected">
+        <div class="payment-options" id="paymentOptions">
+          <button class="payment-option payment-option--selected" type="button" data-method="stars">
             <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
             <span class="payment-option-label">Telegram Stars</span>
             <span class="payment-option-check">✓</span>
-          </div>
+          </button>
+          <button class="payment-option" type="button" data-method="nft">
+            <svg class="icon-nft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 8.5 4.5 20.5h15L22 8.5Z"/><path d="M2 8.5 12 14.5 22 8.5"/><path d="M12 14.5v6"/></svg>
+            <span class="payment-option-label">NFT</span>
+            <span class="payment-option-check">✓</span>
+          </button>
         </div>
       </div>
 
@@ -211,6 +216,7 @@
         <span class="buy-btn-old-price" id="checkoutOldPrice" hidden></span>
         <span class="buy-btn-text" id="checkoutBuyText">Купить</span>
       </button>
+      <button class="buy-btn buy-btn--nft" id="checkoutNftBtn" type="button" hidden>Нажмите для оплаты NFT</button>
       <p class="card-status" id="checkoutStatus"></p>
     </section>
 
@@ -316,6 +322,22 @@
     </div>
   </div>
 
+  <!-- ===== Модалка оплаты NFT ======
+       Вынесена за пределы #app по той же причине, что и мини-меню с
+       промокодом выше: #app анимируется через transform, и position:fixed
+       внутри него считается "fixed относительно #app", а не всего экрана. -->
+  <div class="nft-modal" id="nftModal" hidden>
+    <div class="nft-modal-backdrop" id="nftModalBackdrop"></div>
+    <div class="nft-modal-card" role="dialog" aria-modal="true" aria-labelledby="nftModalTitle">
+      <h2 class="nft-modal-title" id="nftModalTitle">Оплата NFT</h2>
+      <p class="nft-modal-text">Напишите владельцу, чтобы оформить оплату NFT</p>
+      <div class="nft-modal-actions">
+        <button class="nft-modal-btn nft-modal-btn--cancel" id="nftModalCancel" type="button">Отмена</button>
+        <button class="nft-modal-btn nft-modal-btn--write" id="nftModalWrite" type="button">Написать</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ===== Нижняя навигация ======
        Таббар специально вынесен ЗА пределы #app: у #app есть CSS-анимация
        через transform (появление приложения), а transform на предке
@@ -367,6 +389,6 @@
     </button>
   </template>
 
-  <script src="script.js?v=4"></script>
+  <script src="script.js?v=5"></script>
 </body>
 </html>
