@@ -274,6 +274,86 @@ const checkoutPromoInput = document.getElementById("checkoutPromoInput");
 const checkoutPromoApply = document.getElementById("checkoutPromoApply");
 const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
 
+// ====== Способ оплаты (Telegram Stars / NFT) ======
+const paymentOptions = document.getElementById("paymentOptions");
+const checkoutNftBtn = document.getElementById("checkoutNftBtn");
+const nftModal = document.getElementById("nftModal");
+const nftModalBackdrop = document.getElementById("nftModalBackdrop");
+const nftModalCancel = document.getElementById("nftModalCancel");
+const nftModalWrite = document.getElementById("nftModalWrite");
+
+// Telegram-логин владельца, которому пишет пользователь при оплате NFT.
+const NFT_OWNER_USERNAME = "meaninglessperson";
+
+let checkoutPaymentMethod = "stars";
+
+function setPaymentMethod(method) {
+  checkoutPaymentMethod = method;
+
+  paymentOptions.querySelectorAll(".payment-option").forEach((btn) => {
+    btn.classList.toggle("payment-option--selected", btn.dataset.method === method);
+  });
+
+  if (method === "nft") {
+    checkoutBuyBtn.hidden = true;
+    checkoutNftBtn.hidden = false;
+  } else {
+    checkoutNftBtn.hidden = true;
+    checkoutBuyBtn.hidden = false;
+  }
+}
+
+paymentOptions.addEventListener("click", (e) => {
+  const btn = e.target.closest(".payment-option");
+  if (!btn) return;
+
+  setPaymentMethod(btn.dataset.method);
+  setCardStatus(checkoutStatus, "");
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+function showNftModal() {
+  nftModal.hidden = false;
+
+  [nftModalBackdrop, nftModal.querySelector(".nft-modal-card")].forEach((el) => {
+    if (!el) return;
+    el.style.animation = "none";
+    void el.offsetHeight;
+    el.style.animation = "";
+  });
+}
+
+function hideNftModal() {
+  nftModal.hidden = true;
+}
+
+checkoutNftBtn.addEventListener("click", () => {
+  showNftModal();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+nftModalCancel.addEventListener("click", () => {
+  hideNftModal();
+  tg?.HapticFeedback?.selectionChanged();
+});
+
+nftModalBackdrop.addEventListener("click", () => {
+  hideNftModal();
+});
+
+nftModalWrite.addEventListener("click", () => {
+  hideNftModal();
+  // Открываем личные сообщения с владельцем в Telegram. tg.openTelegramLink
+  // корректно работает внутри Mini App, window.open — запасной вариант
+  // для случаев, когда приложение открыто вне Telegram.
+  if (tg?.openTelegramLink) {
+    tg.openTelegramLink(`https://t.me/${NFT_OWNER_USERNAME}`);
+  } else {
+    window.open(`https://t.me/${NFT_OWNER_USERNAME}`, "_blank");
+  }
+  tg?.HapticFeedback?.selectionChanged();
+});
+
 // Элементы, у которых есть CSS-анимация появления, навешиваемая временным
 // классом .co-anim-in (см. playCheckoutEntrance). Базовый CSS теперь всегда
 // держит их видимыми (opacity: 1) — анимация лишь временно "занижает"
@@ -284,6 +364,7 @@ const checkoutAnimatedEls = [
   viewCheckout.querySelector(".description-card"),
   ...viewCheckout.querySelectorAll(".option-group"),
   checkoutBuyBtn,
+  checkoutNftBtn,
 ].filter(Boolean);
 
 let checkoutAnimSafetyTimer = null;
@@ -332,6 +413,8 @@ function openCheckout(product, prefillPromoCode) {
   checkoutPromoApply.disabled = false;
   checkoutPromoInput.disabled = false;
   setPromoStatus("");
+  setPaymentMethod("stars");
+  hideNftModal();
 
   checkoutTitle.textContent = product.title;
   checkoutInitial.textContent = product.initial;
