@@ -511,6 +511,21 @@ function switchView(target) {
   // корректно, но оказывался вне видимой области — выглядело так, будто
   // "интерфейс не открылся". Это и была причина бага "через раз".
   app.scrollTop = 0;
+
+  // Гарантированно перезапускаем анимацию появления экрана: снимаем
+  // класс, форсируем reflow, навешиваем заново. Без явного reflow между
+  // remove и add браузер может "склеить" эти два изменения в одно и не
+  // перезапустить одну и ту же именованную CSS-анимацию повторно — именно
+  // это было причиной бага "первый раз открывается нормально, второй раз
+  // экран будто не появляется пару секунд" (сам экран при этом уже виден
+  // благодаря opacity: 1 по умолчанию, но без свежей анимации переход
+  // выглядел "залипшим").
+  const activeView = views[target];
+  if (activeView) {
+    activeView.classList.remove("view-anim-in");
+    void activeView.offsetHeight;
+    activeView.classList.add("view-anim-in");
+  }
 }
 
 tabs.forEach((tab) => {
@@ -978,6 +993,17 @@ function showCasePrizeModal(discountPercent, code) {
   casePrizeModalBadge.className = "case-prize-modal-badge " + rarityClassFor(discountPercent);
   casePrizeModalCode.textContent = code;
   casePrizeModal.hidden = false;
+
+  // Форсируем перезапуск анимации появления при каждом открытии кейса —
+  // без этого при повторном открытии (второй, третий раз за сессию)
+  // анимация backdrop/карточки могла не запуститься заново в Telegram
+  // WebView (тот же приём, что и для .case-result чуть выше по коду).
+  [casePrizeModalBackdrop, casePrizeModal.querySelector(".case-prize-modal-card")].forEach((el) => {
+    if (!el) return;
+    el.style.animation = "none";
+    void el.offsetHeight;
+    el.style.animation = "";
+  });
 }
 
 function hideCasePrizeModal() {
@@ -1163,4 +1189,8 @@ function initApp() {
   appInitialized = true;
   renderProducts();
   fillProfileFromTelegram();
+  // Экран "Магазин" изначально активен прямо в HTML (без вызова
+  // switchView), поэтому ему тоже нужно явно навесить класс анимации
+  // появления — иначе он останется без неё при самом первом запуске.
+  switchView("shop");
 }
