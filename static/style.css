@@ -618,6 +618,15 @@ body.keyboard-open .tabbar {
   color: var(--text-main);
 }
 
+.duration-option-price-old {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.8;
+  text-decoration: line-through;
+  margin-right: 2px;
+}
+
 .duration-option-price--note {
   font-size: 11.5px;
   font-weight: 600;
