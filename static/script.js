@@ -184,7 +184,15 @@ function applyDurationPrice(priceEl, duration) {
   } else if (checkoutPaymentMethod === "card") {
     priceEl.classList.remove("duration-option-price--note");
     const rubPrice = RU_CARD_PRICES[duration.code];
-    priceEl.innerHTML = rubPrice != null ? `${rubPrice} ₽` : "—";
+    if (rubPrice == null) {
+      priceEl.innerHTML = "—";
+    } else {
+      const finalRubPrice = getFinalPrice(rubPrice, checkoutDiscountPercent);
+      priceEl.innerHTML =
+        checkoutDiscountPercent > 0 && finalRubPrice < rubPrice
+          ? `<span class="duration-option-price-old">${rubPrice} ₽</span> ${finalRubPrice} ₽`
+          : `${rubPrice} ₽`;
+    }
   } else {
     priceEl.classList.remove("duration-option-price--note");
     priceEl.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
@@ -607,6 +615,7 @@ async function applyPromoCode() {
     checkoutPromoInput.disabled = false;
     setPromoStatus("Промокод не найден или уже использован", "error");
     updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    refreshDurationPrices();
     tg?.HapticFeedback?.notificationOccurred("error");
     return;
   }
@@ -618,6 +627,7 @@ async function applyPromoCode() {
   checkoutPromoInput.disabled = true;
   setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
   updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+  refreshDurationPrices();
   tg?.HapticFeedback?.notificationOccurred("success");
 }
 
@@ -635,6 +645,7 @@ checkoutPromoApply.addEventListener("click", () => {
     checkoutPromoApply.classList.remove("promo-apply-btn--applied");
     setPromoStatus("");
     updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    refreshDurationPrices();
     return;
   }
 
