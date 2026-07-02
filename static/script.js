@@ -23,6 +23,11 @@ const DURATIONS = [
   { code: "12m", label: "12 месяцев", price: 2 },
 ];
 
+// Цены в рублях при оплате способом "RU карта" — оформляется вручную
+// через личные сообщения с владельцем, поэтому цены задаются отдельно
+// от цен в Telegram Stars.
+const RU_CARD_PRICES = { "7d": 410, "30d": 1400, "12m": 5200 };
+
 // Промокод проверяется и считается всегда на сервере (в bot.py) — это
 // касается и статических кодов, и одноразовых кодов из кейса, клиенту в
 // этом вопросе не доверяем.
@@ -164,6 +169,37 @@ function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   }
 
   buyBtnText.textContent = "Нажмите для оплаты Telegram Stars";
+}
+
+// Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
+// способа оплаты: звёзды показывают обычную цену, NFT — предложение
+// узнать цену у владельца (оформляется вручную), RU карта — цену в
+// рублях из RU_CARD_PRICES.
+function applyDurationPrice(priceEl, duration) {
+  if (!priceEl) return;
+
+  if (checkoutPaymentMethod === "nft") {
+    priceEl.classList.add("duration-option-price--note");
+    priceEl.textContent = "Узнайте цену у владельца";
+  } else if (checkoutPaymentMethod === "card") {
+    priceEl.classList.remove("duration-option-price--note");
+    const rubPrice = RU_CARD_PRICES[duration.code];
+    priceEl.innerHTML = rubPrice != null ? `${rubPrice} ₽` : "—";
+  } else {
+    priceEl.classList.remove("duration-option-price--note");
+    priceEl.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
+  }
+}
+
+// Перерисовывает цены во всех уже отрендеренных карточках тарифа —
+// вызывается при смене способа оплаты, чтобы цены сразу обновились без
+// необходимости заново открывать экран оформления.
+function refreshDurationPrices() {
+  checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
+    const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
+    if (!duration) return;
+    applyDurationPrice(btn.querySelector(".duration-option-price"), duration);
+  });
 }
 
 function setCardStatus(statusEl, text, type = "") {
@@ -339,7 +375,12 @@ function setPaymentMethod(method) {
   checkoutPaymentMethod = method;
 
   paymentOptions.querySelectorAll(".payment-option").forEach((btn) => {
-    btn.classList.toggle("payment-option--selected", btn.dataset.method === method);
+    const isSelected = btn.dataset.method === method;
+    btn.classList.toggle("payment-option--selected", isSelected);
+    // Выбранный способ не нужно показывать в самом списке — он и так
+    // виден в свёрнутой шапке (paymentToggle), а в списке остаются
+    // только варианты, на которые можно переключиться.
+    btn.hidden = isSelected;
   });
   updatePaymentToggleSummary(method);
 
@@ -352,6 +393,8 @@ function setPaymentMethod(method) {
     checkoutManualBtn.hidden = true;
     checkoutBuyBtn.hidden = false;
   }
+
+  refreshDurationPrices();
 }
 
 paymentOptions.addEventListener("click", (e) => {
@@ -501,7 +544,7 @@ function openCheckout(product, prefillPromoCode) {
     dBtn.dataset.duration = duration.code;
     dBtn.classList.toggle("duration-option--selected", index === 0);
     dNode.querySelector(".duration-option-label").textContent = duration.label;
-    dNode.querySelector(".duration-option-price").innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
+    applyDurationPrice(dNode.querySelector(".duration-option-price"), duration);
     checkoutDurations.appendChild(dNode);
   });
 
