@@ -793,10 +793,27 @@ body.keyboard-open .tabbar {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
   padding: 14px 16px;
   border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(210, 210, 218, 0.05);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease, border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.payment-option:active {
+  transform: scale(0.98);
+}
+
+.payment-option--selected {
   border: 1px solid var(--silver-1);
   background: rgba(210, 210, 218, 0.14);
+  opacity: 1;
 }
 
 .payment-option-label {
@@ -809,6 +826,18 @@ body.keyboard-open .tabbar {
   color: var(--silver-2);
   font-size: 13px;
   font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.payment-option--selected .payment-option-check {
+  opacity: 1;
+}
+
+.icon-nft {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .buy-btn {
@@ -836,6 +865,12 @@ body.keyboard-open .tabbar {
   opacity: 0.6;
   cursor: default;
   transform: none;
+}
+
+.buy-btn--nft {
+  color: #f5f5f7;
+  background: linear-gradient(135deg, #6d5bd0, #3a2c8f);
+  box-shadow: 0 8px 22px rgba(93, 68, 214, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .card-status {
@@ -1779,6 +1814,98 @@ body.keyboard-open .tabbar {
 
 .case-prize-modal-ok:active {
   transform: scale(0.97);
+}
+
+.nft-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.nft-modal[hidden] {
+  display: none;
+}
+
+.nft-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  opacity: 1;
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+.nft-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 26px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  opacity: 1;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.nft-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.nft-modal-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.nft-modal-actions {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.nft-modal-btn {
+  flex: 1;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.nft-modal-btn:active {
+  transform: scale(0.97);
+}
+
+.nft-modal-btn--cancel {
+  background: rgba(210, 210, 218, 0.14);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.nft-modal-btn--write {
+  background: linear-gradient(135deg, #6d5bd0, #3a2c8f);
+  color: #f5f5f7;
+  box-shadow: 0 10px 24px rgba(93, 68, 214, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 /* ============ CHECKOUT VIEW ============ */
