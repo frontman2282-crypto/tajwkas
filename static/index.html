@@ -198,17 +198,33 @@
 
       <div class="option-group">
         <span class="option-group-label">Способ оплаты</span>
-        <div class="payment-options" id="paymentOptions">
-          <button class="payment-option payment-option--selected" type="button" data-method="stars">
-            <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
-            <span class="payment-option-label">Telegram Stars</span>
-            <span class="payment-option-check">✓</span>
+        <div class="payment-select" id="paymentSelect">
+          <button class="payment-toggle" id="paymentToggle" type="button" aria-expanded="false" aria-controls="paymentOptions">
+            <span class="payment-toggle-icon" id="paymentToggleIcon">
+              <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
+            </span>
+            <span class="payment-toggle-label" id="paymentToggleLabel">Telegram Stars</span>
+            <span class="payment-toggle-chevron">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            </span>
           </button>
-          <button class="payment-option" type="button" data-method="nft">
-            <svg class="icon-nft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 8.5 4.5 20.5h15L22 8.5Z"/><path d="M2 8.5 12 14.5 22 8.5"/><path d="M12 14.5v6"/></svg>
-            <span class="payment-option-label">NFT</span>
-            <span class="payment-option-check">✓</span>
-          </button>
+          <div class="payment-options" id="paymentOptions">
+            <button class="payment-option payment-option--selected" type="button" data-method="stars">
+              <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
+              <span class="payment-option-label">Telegram Stars</span>
+              <span class="payment-option-check">✓</span>
+            </button>
+            <button class="payment-option" type="button" data-method="nft">
+              <svg class="icon-nft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 8.5 4.5 20.5h15L22 8.5Z"/><path d="M2 8.5 12 14.5 22 8.5"/><path d="M12 14.5v6"/></svg>
+              <span class="payment-option-label">NFT</span>
+              <span class="payment-option-check">✓</span>
+            </button>
+            <button class="payment-option" type="button" data-method="card">
+              <svg class="icon-nft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 14.5h5"/></svg>
+              <span class="payment-option-label">RU карта</span>
+              <span class="payment-option-check">✓</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -216,7 +232,7 @@
         <span class="buy-btn-old-price" id="checkoutOldPrice" hidden></span>
         <span class="buy-btn-text" id="checkoutBuyText">Купить</span>
       </button>
-      <button class="buy-btn buy-btn--nft" id="checkoutNftBtn" type="button" hidden>Нажмите для оплаты NFT</button>
+      <button class="buy-btn buy-btn--manual" id="checkoutManualBtn" type="button" hidden>Нажмите для оплаты</button>
       <p class="card-status" id="checkoutStatus"></p>
     </section>
 
@@ -322,7 +338,11 @@
     </div>
   </div>
 
-  <!-- ===== Модалка оплаты NFT ======
+  <!-- ===== Модалка ручной оплаты (NFT / Русская карта) ======
+       Один и тот же модал переиспользуется для всех способов оплаты,
+       которые оформляются через личные сообщения с владельцем: заголовок
+       и текст внутри подставляются скриптом в зависимости от выбранного
+       способа (см. MANUAL_PAYMENT_METHODS в script.js).
        Вынесена за пределы #app по той же причине, что и мини-меню с
        промокодом выше: #app анимируется через transform, и position:fixed
        внутри него считается "fixed относительно #app", а не всего экрана. -->
@@ -330,7 +350,7 @@
     <div class="nft-modal-backdrop" id="nftModalBackdrop"></div>
     <div class="nft-modal-card" role="dialog" aria-modal="true" aria-labelledby="nftModalTitle">
       <h2 class="nft-modal-title" id="nftModalTitle">Оплата NFT</h2>
-      <p class="nft-modal-text">Напишите владельцу, чтобы оформить оплату NFT</p>
+      <p class="nft-modal-text" id="nftModalText">Напишите владельцу, чтобы оформить оплату NFT</p>
       <div class="nft-modal-actions">
         <button class="nft-modal-btn nft-modal-btn--cancel" id="nftModalCancel" type="button">Отмена</button>
         <button class="nft-modal-btn nft-modal-btn--write" id="nftModalWrite" type="button">Написать</button>
