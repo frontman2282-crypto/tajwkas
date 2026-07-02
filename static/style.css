@@ -175,7 +175,7 @@ body.keyboard-open .tabbar {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  background: linear-gradient(90deg, var(--silver-2), var(--accent), var(--silver-2));
+  background: linear-gradient(90deg, var(--silver-2), var(--text-dim), var(--silver-2));
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -618,6 +618,20 @@ body.keyboard-open .tabbar {
   color: var(--text-main);
 }
 
+.duration-option-price--note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: right;
+  max-width: 128px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.duration-option--selected .duration-option-price--note {
+  color: var(--text-main);
+}
+
 .duration-option-radio {
   position: relative;
   flex-shrink: 0;
@@ -885,6 +899,10 @@ body.keyboard-open .tabbar {
   transition: background 0.15s ease, transform 0.15s ease;
 }
 
+.payment-option[hidden] {
+  display: none;
+}
+
 .payment-option:active {
   transform: scale(0.98);
 }
@@ -1063,8 +1081,8 @@ body.keyboard-open .tabbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: rgba(210, 210, 218, 0.1);
+  color: var(--silver-2);
 }
 
 .profile-promo-btn-icon svg {
