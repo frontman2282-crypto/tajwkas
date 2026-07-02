@@ -88,58 +88,25 @@ if (tg) {
 // ====== Сплэш / плавное появление ======
 const splash = document.getElementById("splash");
 const app = document.getElementById("app");
-const splashBarFill = document.getElementById("splashBarFill");
 
-let splashProgress = 0;
 let splashDone = false;
-
-function setSplashProgress(value) {
-  splashProgress = Math.max(splashProgress, Math.min(value, 100));
-  if (splashBarFill) splashBarFill.style.width = splashProgress + "%";
-}
 
 function hideSplash() {
   if (splashDone) return;
   splashDone = true;
-  setSplashProgress(100);
-  setTimeout(() => {
-    splash.classList.add("splash--hidden");
-    app.classList.add("app--ready");
-    initApp();
-  }, 180);
+  splash.classList.add("splash--hidden");
+  app.classList.add("app--ready");
+  initApp();
 }
 
-// Плавно "подгружаем" прогресс-бар, пока реально идёт инициализация
-setSplashProgress(20);
-
-// Ждём загрузку шрифтов, если поддерживается — экран выглядит аккуратнее,
-// когда текст не "прыгает" после появления
-const fontsReady = document.fonts && document.fonts.ready
-  ? document.fonts.ready.catch(() => {})
-  : Promise.resolve();
-
-Promise.race([fontsReady, new Promise((res) => setTimeout(res, 900))]).then(() => {
-  setSplashProgress(70);
-});
-
-window.addEventListener("load", () => {
-  setSplashProgress(90);
-});
-
-// Гарантированно скрываем сплэш, даже если что-то пошло не так —
-// пользователь никогда не застрянет на экране загрузки
-const SPLASH_MIN_TIME = 650;
-const SPLASH_MAX_TIME = 2200;
-const splashStartedAt = Date.now();
-
-function scheduleHideSplash() {
-  const elapsed = Date.now() - splashStartedAt;
-  const wait = Math.max(SPLASH_MIN_TIME - elapsed, 0);
-  setTimeout(hideSplash, wait);
-}
-
-window.addEventListener("load", scheduleHideSplash);
-setTimeout(hideSplash, SPLASH_MAX_TIME); // защита от зависания
+// Сплэш показывается РОВНО 4 секунды — фиксированная длительность, а не
+// "пока реально грузится". Заодно эти 4 секунды не тратятся впустую: пока
+// крутится спиннер, в фоне прогреваются шрифты и скрытые вкладки (см.
+// warmUpHiddenViews/preloadFonts ниже) — это устраняет баг с задержкой
+// появления интерфейса при первом открытии "Моих промокодов" или
+// "Оформления заказа".
+const SPLASH_DURATION = 4000;
+setTimeout(hideSplash, SPLASH_DURATION);
 
 // ====== Рендер карточек товаров ======
 const productList = document.getElementById("productList");
@@ -552,6 +519,55 @@ tabs.forEach((tab) => {
     tg?.HapticFeedback?.selectionChanged();
   });
 });
+
+// ====== Прогрев скрытых вкладок и шрифтов (фикс задержки при первом входе) ======
+// Раньше "Мои промокоды", "Оформление заказа" и "Кейс" были скрыты через
+// display: none и браузер вообще не считал для них стили/раскладку и не
+// подгружал нужные жирные начертания шрифта — всё это происходило только
+// в момент реального открытия вкладки, поэтому иногда интерфейс появлялся
+// не сразу, а через пару секунд после клика. Теперь мы один раз, ещё пока
+// показан сплэш, ненадолго и невидимо (visibility: hidden, вне потока
+// документа) показываем эти экраны — браузер успевает посчитать всё
+// заранее, и реальное открытие вкладки происходит мгновенно.
+function warmUpHiddenViews() {
+  const hiddenViews = Object.entries(views)
+    .filter(([key]) => key !== "shop")
+    .map(([, el]) => el)
+    .filter(Boolean);
+
+  hiddenViews.forEach((el) => {
+    el.style.display = "block";
+    el.style.visibility = "hidden";
+    el.style.position = "absolute";
+    el.style.pointerEvents = "none";
+  });
+
+  // Форсируем расчёт layout прямо сейчас, а не откладываем его на потом
+  void document.body.offsetHeight;
+
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      hiddenViews.forEach((el) => {
+        el.style.display = "";
+        el.style.visibility = "";
+        el.style.position = "";
+        el.style.pointerEvents = "";
+      });
+    });
+  });
+}
+
+// Заранее догружаем начертания шрифта, которые реально используются в
+// заголовках/бейджах на этих вкладках — иначе первая отрисовка текста
+// такой жирности ждёт сетевой запрос к Google Fonts.
+function preloadFonts() {
+  if (!document.fonts || !document.fonts.load) return;
+  ["600 16px 'Golos Text'", "700 16px 'Golos Text'", "800 16px 'Golos Text'", "900 16px 'Golos Text'"]
+    .forEach((font) => document.fonts.load(font).catch(() => {}));
+}
+
+warmUpHiddenViews();
+preloadFonts();
 
 // ====== Профиль ======
 const profileAvatar = document.getElementById("profileAvatar");
