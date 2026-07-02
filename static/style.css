@@ -44,15 +44,6 @@
   --graphite-btn-3: #5a5d68;
   --graphite-btn-glow: rgba(180, 186, 199, 0.35);
 
-  /* Тёмно-серые кнопки с "прикольным" пульсирующим ледяным свечением —
-     для способов оплаты, которые оформляются через личные сообщения
-     (NFT, Русская карта), взамен прежнего фиолетового цвета. */
-  --manual-btn-1: #48484f;
-  --manual-btn-2: #29292d;
-  --manual-btn-3: #18181b;
-  --manual-glow-a: rgba(148, 210, 255, 0.28);
-  --manual-glow-b: rgba(148, 210, 255, 0.65);
-
   --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
@@ -60,15 +51,6 @@
 @keyframes legendary-glow-pulse {
   0%, 100% { filter: brightness(1); }
   50% { filter: brightness(1.18); }
-}
-
-@keyframes manual-btn-glow-pulse {
-  0%, 100% {
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 16px var(--manual-glow-a);
-  }
-  50% {
-    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 0 32px var(--manual-glow-b);
-  }
 }
 
 * {
@@ -801,89 +783,10 @@ body.keyboard-open .tabbar {
   margin-right: 8px;
 }
 
-.payment-select {
-  display: flex;
-  flex-direction: column;
-}
-
-.payment-toggle {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  padding: 14px 16px;
-  border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(210, 210, 218, 0.05);
-  color: var(--text-main);
-  font-family: var(--font-body);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
-}
-
-.payment-toggle:active {
-  transform: scale(0.98);
-}
-
-.payment-toggle--open {
-  border-color: var(--silver-1);
-  background: rgba(210, 210, 218, 0.1);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-}
-
-.payment-toggle-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-  color: var(--silver-2);
-}
-
-.payment-toggle-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.payment-toggle-label {
-  flex: 1;
-  font-size: 13.5px;
-  font-weight: 600;
-}
-
-.payment-toggle-chevron {
-  display: flex;
-  color: var(--text-dim);
-  transition: transform 0.2s ease;
-}
-
-.payment-toggle-chevron svg {
-  width: 18px;
-  height: 18px;
-}
-
-.payment-toggle--open .payment-toggle-chevron {
-  transform: rotate(180deg);
-}
-
 .payment-options {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-height: 0;
-  opacity: 0;
-  overflow: hidden;
-  padding: 0 1px;
-  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease;
-}
-
-.payment-options--open {
-  max-height: 320px;
-  opacity: 1;
-  margin-top: 8px;
 }
 
 .payment-option {
@@ -964,12 +867,10 @@ body.keyboard-open .tabbar {
   transform: none;
 }
 
-.buy-btn--manual {
-  color: var(--text-main);
-  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 16px var(--manual-glow-a);
-  animation: manual-btn-glow-pulse 2.6s ease-in-out infinite;
+.buy-btn--nft {
+  color: #f5f5f7;
+  background: linear-gradient(135deg, #6d5bd0, #3a2c8f);
+  box-shadow: 0 8px 22px rgba(93, 68, 214, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .card-status {
@@ -2002,11 +1903,9 @@ body.keyboard-open .tabbar {
 }
 
 .nft-modal-btn--write {
-  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
-  color: var(--text-main);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 0 14px var(--manual-glow-a);
-  animation: manual-btn-glow-pulse 2.6s ease-in-out infinite;
+  background: linear-gradient(135deg, #6d5bd0, #3a2c8f);
+  color: #f5f5f7;
+  box-shadow: 0 10px 24px rgba(93, 68, 214, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 /* ============ CHECKOUT VIEW ============ */
