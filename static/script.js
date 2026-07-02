@@ -274,66 +274,18 @@ const checkoutPromoInput = document.getElementById("checkoutPromoInput");
 const checkoutPromoApply = document.getElementById("checkoutPromoApply");
 const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
 
-// ====== Способ оплаты (Telegram Stars / NFT / Русская карта) ======
-const paymentSelect = document.getElementById("paymentSelect");
-const paymentToggle = document.getElementById("paymentToggle");
-const paymentToggleIcon = document.getElementById("paymentToggleIcon");
-const paymentToggleLabel = document.getElementById("paymentToggleLabel");
+// ====== Способ оплаты (Telegram Stars / NFT) ======
 const paymentOptions = document.getElementById("paymentOptions");
-const checkoutManualBtn = document.getElementById("checkoutManualBtn");
+const checkoutNftBtn = document.getElementById("checkoutNftBtn");
 const nftModal = document.getElementById("nftModal");
 const nftModalBackdrop = document.getElementById("nftModalBackdrop");
-const nftModalTitle = document.getElementById("nftModalTitle");
-const nftModalText = document.getElementById("nftModalText");
 const nftModalCancel = document.getElementById("nftModalCancel");
 const nftModalWrite = document.getElementById("nftModalWrite");
 
-// Telegram-логин владельца, которому пишет пользователь при оплате
-// способами, оформляемыми вручную (NFT, Русская карта).
-const MANUAL_PAYMENT_OWNER_USERNAME = "meaninglessperson";
-
-// Способы оплаты, которые оформляются не автоматически, а перепиской с
-// владельцем в личных сообщениях. Чтобы добавить новый такой способ,
-// достаточно добавить сюда запись и кнопку .payment-option с тем же
-// data-method в разметке.
-const MANUAL_PAYMENT_METHODS = {
-  nft: {
-    buyLabel: "Нажмите для оплаты NFT",
-    modalTitle: "Оплата NFT",
-    modalText: "Напишите владельцу, чтобы оформить оплату NFT",
-  },
-  card: {
-    buyLabel: "Нажмите для оплаты картой",
-    modalTitle: "Оплата картой",
-    modalText: "Напишите владельцу, чтобы оформить оплату Русской картой",
-  },
-};
+// Telegram-логин владельца, которому пишет пользователь при оплате NFT.
+const NFT_OWNER_USERNAME = "meaninglessperson";
 
 let checkoutPaymentMethod = "stars";
-
-function updatePaymentToggleSummary(method) {
-  const optionBtn = paymentOptions.querySelector(`.payment-option[data-method="${method}"]`);
-  if (!optionBtn) return;
-
-  const icon = optionBtn.querySelector("svg");
-  paymentToggleIcon.innerHTML = icon ? icon.outerHTML : "";
-  paymentToggleLabel.textContent = optionBtn.querySelector(".payment-option-label")?.textContent || "";
-}
-
-function setPaymentOptionsOpen(open) {
-  paymentOptions.classList.toggle("payment-options--open", open);
-  paymentToggle.classList.toggle("payment-toggle--open", open);
-  paymentToggle.setAttribute("aria-expanded", String(open));
-}
-
-function togglePaymentOptions() {
-  setPaymentOptionsOpen(!paymentOptions.classList.contains("payment-options--open"));
-}
-
-paymentToggle.addEventListener("click", () => {
-  togglePaymentOptions();
-  tg?.HapticFeedback?.selectionChanged();
-});
 
 function setPaymentMethod(method) {
   checkoutPaymentMethod = method;
@@ -341,15 +293,12 @@ function setPaymentMethod(method) {
   paymentOptions.querySelectorAll(".payment-option").forEach((btn) => {
     btn.classList.toggle("payment-option--selected", btn.dataset.method === method);
   });
-  updatePaymentToggleSummary(method);
 
-  const manualConfig = MANUAL_PAYMENT_METHODS[method];
-  if (manualConfig) {
+  if (method === "nft") {
     checkoutBuyBtn.hidden = true;
-    checkoutManualBtn.hidden = false;
-    checkoutManualBtn.textContent = manualConfig.buyLabel;
+    checkoutNftBtn.hidden = false;
   } else {
-    checkoutManualBtn.hidden = true;
+    checkoutNftBtn.hidden = true;
     checkoutBuyBtn.hidden = false;
   }
 }
@@ -360,24 +309,10 @@ paymentOptions.addEventListener("click", (e) => {
 
   setPaymentMethod(btn.dataset.method);
   setCardStatus(checkoutStatus, "");
-  setPaymentOptionsOpen(false);
   tg?.HapticFeedback?.selectionChanged();
 });
 
-// Закрыть список способов оплаты по клику вне него.
-document.addEventListener("click", (e) => {
-  if (!paymentSelect.contains(e.target)) {
-    setPaymentOptionsOpen(false);
-  }
-});
-
 function showNftModal() {
-  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
-  if (manualConfig) {
-    nftModalTitle.textContent = manualConfig.modalTitle;
-    nftModalText.textContent = manualConfig.modalText;
-  }
-
   nftModal.hidden = false;
 
   [nftModalBackdrop, nftModal.querySelector(".nft-modal-card")].forEach((el) => {
@@ -392,7 +327,7 @@ function hideNftModal() {
   nftModal.hidden = true;
 }
 
-checkoutManualBtn.addEventListener("click", () => {
+checkoutNftBtn.addEventListener("click", () => {
   showNftModal();
   tg?.HapticFeedback?.selectionChanged();
 });
@@ -412,9 +347,9 @@ nftModalWrite.addEventListener("click", () => {
   // корректно работает внутри Mini App, window.open — запасной вариант
   // для случаев, когда приложение открыто вне Telegram.
   if (tg?.openTelegramLink) {
-    tg.openTelegramLink(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`);
+    tg.openTelegramLink(`https://t.me/${NFT_OWNER_USERNAME}`);
   } else {
-    window.open(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`, "_blank");
+    window.open(`https://t.me/${NFT_OWNER_USERNAME}`, "_blank");
   }
   tg?.HapticFeedback?.selectionChanged();
 });
@@ -429,7 +364,7 @@ const checkoutAnimatedEls = [
   viewCheckout.querySelector(".description-card"),
   ...viewCheckout.querySelectorAll(".option-group"),
   checkoutBuyBtn,
-  checkoutManualBtn,
+  checkoutNftBtn,
 ].filter(Boolean);
 
 let checkoutAnimSafetyTimer = null;
