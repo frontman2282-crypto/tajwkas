@@ -105,7 +105,7 @@ function hideSplash() {
 // warmUpHiddenViews/preloadFonts ниже) — это устраняет баг с задержкой
 // появления интерфейса при первом открытии "Моих промокодов" или
 // "Оформления заказа".
-const SPLASH_DURATION = 4000;
+const SPLASH_DURATION = 2500;
 setTimeout(hideSplash, SPLASH_DURATION);
 
 // ====== Рендер карточек товаров ======
@@ -520,11 +520,24 @@ function switchView(target) {
   // экран будто не появляется пару секунд" (сам экран при этом уже виден
   // благодаря opacity: 1 по умолчанию, но без свежей анимации переход
   // выглядел "залипшим").
+  // ВАЖНО: раньше здесь стоял `void activeView.offsetHeight;` сразу после
+  // remove/перед add — это форсированный синхронный reflow (layout
+  // thrashing) прямо в обработчике клика, да ещё сразу после записи
+  // app.scrollTop = 0 и смены классов выше. Браузер был вынужден
+  // синхронно пересчитать layout всей страницы в тот же тик — именно
+  // это ощущалось как подлагивание/рывок в момент переключения вкладок.
+  // Двойной requestAnimationFrame даёт тот же гарантированный перезапуск
+  // именованной CSS-анимации (браузер успевает "увидеть" класс без
+  // анимации на одном кадре и с анимацией на следующем), но не блокирует
+  // основной поток синхронным чтением layout-свойства.
   const activeView = views[target];
   if (activeView) {
     activeView.classList.remove("view-anim-in");
-    void activeView.offsetHeight;
-    activeView.classList.add("view-anim-in");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        activeView.classList.add("view-anim-in");
+      });
+    });
   }
 }
 
