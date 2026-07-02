@@ -1,1400 +1,2211 @@
-// ====== Каталог товаров ======
-// Чтобы добавить новый товар — просто добавь объект в этот массив.
-// id должен совпадать с ключом PRODUCTS в bot.py.
-const PRODUCTS = [
-  {
-    id: "dystopia",
-    title: "Dystopia",
-    subtitle: "Премиальный статус и расширенные возможности",
-    description:
-      "Dystopia — это премиальный игровой проект нового уровня, созданный для тех, кто хочет больше, чем обычный опыт в игре. Это система уникальных возможностей, расширенного функционала и особого статуса, который выделяет тебя среди остальных игроков.",
-    price: 2,
-    initial: "D",
-    badges: ["UNDETECTED"],
-  },
-];
+:root {
+  --bg-black: #0b0b0d;
+  --bg-graphite-deep: #232326;
+  --bg-graphite-mid: #19191c;
+  --card-bg: #1e1e21;
+  --card-bg-2: #161618;
+  --border: #38383e;
+  --border-soft: #29292d;
+  --silver-1: #b6b6bf;
+  --silver-2: #f1f1f4;
+  --silver-glow: #8d8d95;
+  --text-main: #f5f5f7;
+  --text-dim: #a6a6ae;
+  --text-faint: #6c6c74;
+  --star: #ffc21e;
+  --green: #22c55e;
+  --green-dark: #16a34a;
+  --accent: #7c6cf0;
+  --accent-soft: rgba(124, 108, 240, 0.12);
+  --accent-glow: rgba(124, 108, 240, 0.45);
 
-// Сроки доступа — должны совпадать с DURATIONS в bot.py.
-// Цены указаны в звёздах (Telegram Stars) — поменяй значения price
-// на свои под каждый тариф.
-const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 2 },
-  { code: "30d", label: "30 дней", price: 2 },
-  { code: "12m", label: "12 месяцев", price: 2 },
-];
+  /* Палитра редкости призов/промокодов — используется бейджами скидок
+     (кейс, результат кейса, "Мои промокоды") везде одинаково. */
+  --rarity-common-1: #aab4c4;
+  --rarity-common-2: #667080;
+  --rarity-common-glow: rgba(148, 163, 184, 0.4);
+  --rarity-uncommon-1: #5eead4;
+  --rarity-uncommon-2: #0d9488;
+  --rarity-uncommon-glow: rgba(45, 212, 191, 0.45);
+  --rarity-rare-1: #67e8ff;
+  --rarity-rare-2: #3b82f6;
+  --rarity-rare-glow: rgba(59, 178, 255, 0.5);
+  --rarity-epic-1: #f472e0;
+  --rarity-epic-2: #9333ea;
+  --rarity-epic-glow: rgba(217, 90, 240, 0.5);
+  --rarity-legendary-1: #ffe08a;
+  --rarity-legendary-2: #ff8a3d;
+  --rarity-legendary-glow: rgba(255, 154, 62, 0.55);
 
-// Цены в рублях при оплате способом "RU карта" — оформляется вручную
-// через личные сообщения с владельцем, поэтому цены задаются отдельно
-// от цен в Telegram Stars.
-const RU_CARD_PRICES = { "7d": 410, "30d": 1400, "12m": 5200 };
+  /* Графитово-серый градиент с мягким свечением — для основных кнопок
+     действия (ОК, "Открыть кейс", "Использовать", "Применить"). */
+  --graphite-btn-1: #d4d6dc;
+  --graphite-btn-2: #8b8f9b;
+  --graphite-btn-3: #5a5d68;
+  --graphite-btn-glow: rgba(180, 186, 199, 0.35);
 
-// Промокод проверяется и считается всегда на сервере (в bot.py) — это
-// касается и статических кодов, и одноразовых кодов из кейса, клиенту в
-// этом вопросе не доверяем.
+  /* Тёмно-серые кнопки — для способов оплаты, которые оформляются через
+     личные сообщения (NFT, RU карта), и для основной кнопки покупки. */
+  --manual-btn-1: #48484f;
+  --manual-btn-2: #29292d;
+  --manual-btn-3: #18181b;
 
-// Иконка звезды (Telegram Stars) — используется вместо символа "★",
-// который выглядит по-разному в разных шрифтах/системах
-const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>`;
+  --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
 
-// ====== Инициализация Telegram WebApp ======
-const tg = window.Telegram?.WebApp;
+@keyframes legendary-glow-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
 
-if (tg) {
-  tg.ready();
-  tg.expand();
-  tg.setHeaderColor("#050208");
-  tg.setBackgroundColor("#050208");
-  // Запрещаем системный жест "потянуть вниз, чтобы закрыть" — без этого
-  // на iOS можно было утащить весь Mini App вниз и увидеть пустоту под
-  // интерфейсом. Метод есть только в Bot API 7.7+, поэтому оборачиваем
-  // в try/catch на случай старых клиентов Telegram.
-  try {
-    tg.disableVerticalSwipes?.();
-  } catch (err) {
-    // старая версия клиента — просто игнорируем
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
+  background: var(--bg-black);
+  overflow: hidden;
+}
+
+/* Тело фиксируем и полностью прячем его собственный скролл — иначе в
+   Telegram WebView (особенно на iOS) страницу можно "оттянуть" пальцем
+   ниже реального контента и увидеть пустую область под интерфейсом.
+   Прокручиваться теперь может только .app — это и есть единственный
+   скролл-контейнер приложения. */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-black);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
+/* Таббар прячем, пока открыта клавиатура (см. setAppHeight в script.js) —
+   на экране ввода промокода он не нужен, а освобождённое место не даёт
+   контенту "наезжать" на клавиатуру. */
+body.keyboard-open .tabbar {
+  display: none;
+}
+
+/* ============ SPLASH ============ */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.16), transparent 60%),
+    linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 100%);
+  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.splash.splash--hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+.splash-mark {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: splash-pulse 1.8s ease-in-out infinite;
+}
+
+/* Мягкое дышащее свечение позади кружка */
+.splash-aura {
+  position: absolute;
+  inset: -34px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(226, 226, 233, 0.45) 0%, rgba(150, 150, 158, 0.22) 45%, transparent 72%);
+  filter: blur(10px);
+  animation: splash-aura-pulse 2.2s ease-in-out infinite;
+}
+
+/* Сам серый кружок-заливка — с собственным лёгким свечением по краю,
+   чтобы он не выглядел плоским пятном */
+.splash-circle {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow:
+    0 0 18px rgba(210, 210, 220, 0.45),
+    0 0 34px rgba(150, 150, 158, 0.22),
+    inset 0 0 14px rgba(0, 0, 0, 0.12);
+}
+
+/* Вращающийся ободок-спиннер поверх кружка — создаёт ощущение "грузится" */
+.splash-spinner {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 210deg, var(--silver-2) 300deg, var(--silver-1) 340deg, transparent 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  filter: drop-shadow(0 0 8px rgba(230, 230, 236, 0.55));
+  animation: spin 1.1s linear infinite;
+}
+
+.splash-label {
+  margin-top: 26px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--silver-2), var(--text-dim), var(--silver-2));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: splash-label-in 0.6s ease 0.2s both, splash-label-shimmer 2.6s linear infinite;
+}
+
+.splash-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.splash-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--silver-2);
+  font-style: normal;
+  animation: splash-dot-blink 1.2s ease-in-out infinite;
+}
+
+.splash-dots i:nth-child(2) { animation-delay: 0.15s; }
+.splash-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes splash-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes splash-aura-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes splash-label-shimmer {
+  to { background-position: -200% center; }
+}
+
+@keyframes splash-label-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes splash-dot-blink {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ============ APP SHELL ============ */
+
+.app {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  /* На iOS 100dvh не всегда пересчитывается, когда открывается
+     клавиатура — из-за этого нижняя часть экрана (кнопка "Купить",
+     таббар) обрезалась и наезжала на промокод. --app-height
+     проставляется через JS по window.visualViewport и имеет приоритет. */
+  height: var(--app-height, 100dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* pan-y защищает от случайного горизонтального пинч-зума/скролла на
+     сенсорных устройствах, оставляя вертикальную прокрутку рабочей. */
+  touch-action: pan-y;
+  padding-bottom: 92px;
+  opacity: 0;
+  transform: translateY(10px);
+  background: linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 55%, var(--bg-black) 100%);
+}
+
+/* Тонкая сетка на фоне — читается как элемент "дистопичного" интерфейса,
+   а не как пустой чёрный экран. Сама сетка "прибита" к вьюпорту через
+   background-attachment: fixed, поэтому не едет вместе со скроллом. */
+.app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, rgba(0,0,0,0.9) 0%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 0%, rgba(0,0,0,0.9) 0%, transparent 72%);
+  opacity: 0.6;
+}
+
+/* Лёгкое зерно поверх всего, чтобы плоский градиент не выглядел "пусто" */
+.app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.app.app--ready {
+  animation: app-fade-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes app-fade-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bg-glow {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(20px);
+  z-index: 0;
+}
+
+.bg-glow--top {
+  top: -160px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--silver-glow) 0%, transparent 70%);
+  opacity: 0.3;
+  animation: glow-breathe-top 7s ease-in-out infinite;
+}
+
+.bg-glow--bottom {
+  bottom: -200px;
+  left: 20%;
+  background: radial-gradient(circle, #3d3d43 0%, transparent 70%);
+  opacity: 0.25;
+  animation: glow-breathe-alt 8s ease-in-out infinite;
+  animation-delay: 2.4s;
+}
+
+/* Третье, более узкое пятно света — добавляет глубины в среднюю часть
+   экрана (там, где раньше было просто ровное чёрное поле). */
+.bg-glow--mid {
+  top: 38%;
+  right: -140px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(124, 108, 240, 0.22) 0%, transparent 70%);
+  opacity: 0.22;
+  animation: glow-breathe-alt 9s ease-in-out infinite;
+  animation-delay: 1.1s;
+}
+
+@keyframes glow-breathe-top {
+  0%, 100% { opacity: 0.28; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.45; transform: translateX(-50%) scale(1.08); }
+}
+
+@keyframes glow-breathe-alt {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.1); }
+}
+
+/* ============ VIEWS / TABS ============ */
+
+.view {
+  position: relative;
+  z-index: 1;
+  display: none;
+  padding: 28px 20px 12px;
+  /* opacity: 1 по умолчанию — экран ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не перезапустится. Раньше
+     видимость целиком зависела от автоматического запуска CSS-анимации
+     при смене display: none -> block. Это отлично работало при ПЕРВОМ
+     показе экрана (после загрузки страницы), но при повторном заходе на
+     тот же экран (например, второй раз открыть "Мои промокоды" или
+     "Оформление заказа") Telegram WebView не всегда перезапускал ту же
+     самую именованную CSS-анимацию повторно — из-за этого при втором
+     открытии контент секунду-две как будто "не появлялся". Теперь это
+     невозможно в принципе: базовое состояние — видимый экран, а анимация
+     — только бонус поверх него. */
+  opacity: 1;
+}
+
+.view--active {
+  display: block;
+}
+
+/* Анимация появления навешивается временным классом .view-anim-in из
+   switchView() в script.js при КАЖДОМ переключении экрана — класс явно
+   снимается, форсируется reflow и добавляется заново, что гарантированно
+   перезапускает анимацию в Telegram WebView. Просто переключения
+   display: none -> block для этого недостаточно (см. опыт с co-anim-in
+   в checkout ниже — та же проблема, тот же приём для её решения). */
+.view--active.view-anim-in {
+  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.view--checkout.view--active.view-anim-in {
+  animation: view-in-push 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes view-in-push {
+  from { opacity: 0; transform: translateX(28px) scale(0.97); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.topbar {
+  margin-bottom: 22px;
+}
+
+.topbar-eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--silver-2);
+  margin-bottom: 4px;
+}
+
+.topbar-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============ PRODUCT GRID / CARD ============ */
+
+.product-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  position: relative;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  animation: card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--card-index, 0) * 70ms + 80ms);
+}
+
+.card:active {
+  transform: scale(0.985);
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- Compact row (collapsed state) --- */
+
+.card-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 22px;
+  min-height: 92px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.card-row-icon {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #2a2a2f, #131315);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-row-initial {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--silver-2);
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+}
+
+.card-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-row-title {
+  font-family: var(--font-display);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+
+.card-row-subtitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-row-badges {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.badge-tag {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.card-row-price {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icon-star {
+  width: 13px;
+  height: 13px;
+  fill: var(--star);
+  flex-shrink: 0;
+  vertical-align: -2px;
+  filter: drop-shadow(0 0 4px rgba(255, 196, 30, 0.55));
+}
+
+.price-value {
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--font-display);
+}
+
+.card-row-chevron {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+.option-group {
+  margin-top: 20px;
+}
+
+.option-group-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+
+.duration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duration-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duration-option:active {
+  transform: scale(0.985);
+}
+
+.duration-option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.duration-option-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.duration-option-price {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.duration-option-price--note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: right;
+  max-width: 128px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.duration-option--selected .duration-option-price--note {
+  color: var(--text-main);
+}
+
+.duration-option-radio {
+  position: relative;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duration-option--selected {
+  border-color: var(--silver-1);
+  background: rgba(182, 182, 191, 0.09);
+  color: var(--text-main);
+  box-shadow: 0 0 0 1px var(--silver-1) inset, 0 0 22px rgba(141, 141, 149, 0.4);
+}
+
+.duration-option--selected .duration-option-price {
+  color: var(--silver-2);
+}
+
+.duration-option--selected .duration-option-radio {
+  border-color: var(--silver-2);
+  box-shadow: 0 0 12px rgba(141, 141, 149, 0.65);
+}
+
+.duration-option--selected .duration-option-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--silver-2);
+}
+
+.promo-row {
+  display: flex;
+  gap: 8px;
+}
+
+.promo-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.promo-input-icon {
+  position: absolute;
+  left: 13px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+  pointer-events: none;
+  transition: color 0.15s ease;
+}
+
+.promo-input-wrap:focus-within .promo-input-icon {
+  color: var(--silver-2);
+}
+
+.promo-input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px 12px 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  /* iOS открывает своё нативное увеличение и подменяет фон поля на
+     белый, если размер шрифта меньше 16px — держим 16px, чтобы этого
+     не происходило. */
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  /* Убираем нативный вид поля (WebKit подставляет свой светлый фон
+     инпута при фокусе/автозаполнении, из-за чего поле "белеет" —
+     именно это и происходило на скриншоте). */
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-text-fill-color: var(--text-main);
+  caret-color: var(--silver-2);
+}
+
+.promo-input::placeholder {
+  color: var(--text-faint);
+}
+
+.promo-input:focus {
+  border-color: var(--silver-1);
+  background: var(--card-bg-2);
+}
+
+/* WebKit применяет отдельный набор стилей для автозаполненных полей —
+   без этого правила поле остаётся белым даже после наших правок выше. */
+.promo-input:-webkit-autofill,
+.promo-input:-webkit-autofill:focus,
+.promo-input:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--text-main);
+  -webkit-box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  caret-color: var(--silver-2);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+.promo-apply-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #14151a;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.promo-apply-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-apply-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.promo-apply-btn--applied {
+  border: 1px solid var(--green);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+}
+
+.promo-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color 0.15s ease;
+}
+
+.promo-status.success { color: #4ade80; }
+.promo-status.error { color: #f87171; }
+
+.promo-status:empty { margin-top: 0; }
+
+.buy-btn-old-price {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.8;
+  text-decoration: line-through;
+  margin-right: 8px;
+}
+
+.payment-select {
+  display: flex;
+  flex-direction: column;
+}
+
+.payment-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(210, 210, 218, 0.05);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.payment-toggle:active {
+  transform: scale(0.98);
+}
+
+.payment-toggle--open {
+  border-color: var(--silver-1);
+  background: rgba(210, 210, 218, 0.1);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.payment-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--silver-2);
+}
+
+.payment-toggle-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.payment-toggle-label {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.payment-toggle-chevron {
+  display: flex;
+  color: var(--text-dim);
+  transition: transform 0.2s ease;
+}
+
+.payment-toggle-chevron svg {
+  width: 18px;
+  height: 18px;
+}
+
+.payment-toggle--open .payment-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+.payment-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 1px;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease;
+}
+
+.payment-options--open {
+  max-height: 320px;
+  opacity: 1;
+  margin-top: 8px;
+}
+
+.payment-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(210, 210, 218, 0.05);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.payment-option[hidden] {
+  display: none;
+}
+
+.payment-option:active {
+  transform: scale(0.98);
+}
+
+.payment-option-label {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.payment-option-check {
+  color: var(--silver-2);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.payment-option--selected .payment-option-check {
+  opacity: 1;
+}
+
+.icon-nft {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.buy-btn {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-top: 16px;
+  font-size: 15px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  color: var(--text-main);
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.buy-btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.buy-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.buy-btn--manual {
+  color: var(--text-main);
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.card-status {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.card-status.success { color: #4ade80; }
+.card-status.error { color: #f87171; }
+
+/* ============ PROFILE ============ */
+
+.profile-card {
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 32px 22px 26px;
+  text-align: center;
+  margin-bottom: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.profile-avatar-wrap {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 20px;
+  position: relative;
+}
+
+.profile-avatar,
+.profile-avatar--fallback {
+  position: absolute;
+  inset: 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+}
+
+.profile-avatar {
+  object-fit: cover;
+  border: 2px solid var(--silver-2);
+  box-shadow: 0 0 0 4px rgba(220, 220, 226, 0.14);
+}
+
+.profile-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #2a2a2f, #131315);
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--silver-2);
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.4);
+}
+
+/* Единственный источник истины для видимости — атрибут [hidden].
+   ID-селектор гарантирует приоритет над любыми другими display-правилами,
+   поэтому фото и заглушка-буква больше никогда не показываются одновременно. */
+#profileAvatar[hidden],
+#profileAvatarFallback[hidden] {
+  display: none !important;
+}
+
+.profile-avatar--fallback svg {
+  width: 38px;
+  height: 38px;
+  stroke: var(--silver-2);
+  opacity: 0.85;
+}
+
+.profile-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  letter-spacing: -0.01em;
+}
+
+.profile-username {
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+/* ============ ПРОФИЛЬ: КНОПКА "МОИ ПРОМОКОДЫ" ============ */
+
+.profile-promo-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  color: var(--text-main);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.profile-promo-btn:active {
+  transform: scale(0.985);
+}
+
+.profile-promo-btn-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(210, 210, 218, 0.1);
+  color: var(--silver-2);
+}
+
+.profile-promo-btn-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.profile-promo-btn-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.profile-promo-btn-chevron {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--text-faint);
+}
+
+/* ============ ЭКРАН "МОИ ПРОМОКОДЫ" ============ */
+
+.promo-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.promo-list-actions[hidden] {
+  display: none;
+}
+
+.promo-select-mode-btn,
+.promo-cancel-select-btn,
+.promo-delete-all-btn,
+.promo-delete-selected-btn {
+  padding: 9px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.promo-select-mode-btn:active,
+.promo-cancel-select-btn:active,
+.promo-delete-all-btn:active,
+.promo-delete-selected-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-delete-all-btn {
+  margin-left: auto;
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.promo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promo-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+  animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--promo-index, 0) * 60ms + 60ms);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list-item--selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--card-bg-2) 100%);
+}
+
+.promo-list-item-checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  border: 2px solid var(--border);
+  background: var(--card-bg-2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list--selecting .promo-list-item-checkbox {
+  display: inline-flex;
+}
+
+.promo-list-item-checkbox:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.promo-list-item-checkbox:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.promo-list-item-badge {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 11px;
+  border-radius: 100px;
+}
+
+.promo-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 10px var(--rarity-common-glow);
+}
+.promo-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 10px var(--rarity-uncommon-glow);
+}
+.promo-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 10px var(--rarity-rare-glow);
+}
+.promo-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 10px var(--rarity-epic-glow);
+}
+.promo-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 16px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.promo-list-item-code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.promo-list-item-use-btn {
+  flex-shrink: 0;
+  padding: 9px 15px;
+  border-radius: 11px;
+  border: none;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #14151a;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.promo-list-item-use-btn:active {
+  transform: scale(0.94);
+}
+
+.promo-list-empty {
+  text-align: center;
+  padding: 48px 24px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* ============ КЕЙС: ВХОД В МАГАЗИНЕ (квадратная карточка) ============ */
+
+.shop-features {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.case-entry-card {
+  position: relative;
+  width: 136px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.case-entry-card:active {
+  transform: scale(0.97);
+}
+
+.case-entry-free {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+}
+
+.case-entry-icon {
+  width: 72px;
+  height: 72px;
+  margin-top: 6px;
+}
+
+.case-entry-title {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.case-entry-sub {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ============ SVG КЕЙСА (лутбокс) ============ */
+
+.case-box-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.case-box-svg--big {
+  width: 168px;
+  height: 168px;
+  margin: 4px auto 6px;
+  display: block;
+}
+
+.case-box-glow {
+  fill: var(--accent);
+  opacity: 0.28;
+  filter: blur(10px);
+  animation: case-glow-pulse 2.6s ease-in-out infinite;
+  transform-origin: 100px 98px;
+}
+
+.case-box-lid {
+  transform-origin: 100px 84px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.case-box-lock {
+  transition: opacity 0.2s ease;
+}
+
+/* Ленточка и бант — придают коробке вид подарка/приза, а не просто ящика */
+.case-box-ribbon-v,
+.case-box-ribbon-h {
+  pointer-events: none;
+}
+
+.case-box-bow {
+  transform-origin: 100px 108px;
+  animation: case-bow-sway 2.8s ease-in-out infinite;
+}
+
+@keyframes case-bow-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-3deg); }
+}
+
+/* Бирка "%" на углу коробки — лёгкое покачивание, как настоящий ценник */
+.case-box-percent-tag {
+  transform-origin: 155px 39px;
+  animation: case-tag-swing 2.2s ease-in-out infinite;
+}
+
+@keyframes case-tag-swing {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(6deg); }
+}
+
+.case-box-sparkles path {
+  fill: var(--star);
+  opacity: 0;
+  transform-origin: center;
+  animation: case-sparkle-twinkle 2.4s ease-in-out infinite;
+}
+
+.case-box-sparkles path:nth-child(2) { animation-delay: 0.6s; }
+.case-box-sparkles path:nth-child(3) { animation-delay: 1.2s; }
+.case-box-sparkles path:nth-child(4) { animation-delay: 1.8s; }
+
+@keyframes case-glow-pulse {
+  0%, 100% { opacity: 0.22; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.08); }
+}
+
+@keyframes case-sparkle-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(15deg); }
+}
+
+/* Лёгкое "дыхание" всей коробки в состоянии покоя */
+.case-stage {
+  text-align: center;
+  padding: 6px 0 4px;
+}
+
+.case-stage .case-box-svg--big {
+  animation: case-box-float 3.2s ease-in-out infinite;
+}
+
+@keyframes case-box-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.case-stage-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  max-width: 280px;
+  margin: 0 auto 18px;
+}
+
+/* Пока крутится рулетка — коробка мелко "трясётся", а свечение ускоряется */
+.case-stage--spinning .case-box-svg--big {
+  animation: case-box-shake 0.35s ease-in-out infinite;
+}
+
+.case-stage--spinning .case-box-glow {
+  animation-duration: 0.6s;
+}
+
+.case-stage--spinning .case-box-lid {
+  transform: translateY(-3px) rotate(-1.5deg);
+}
+
+@keyframes case-box-shake {
+  0%, 100% { transform: translateY(-2px) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-1.2deg); }
+  75% { transform: translateY(-2px) rotate(1.2deg); }
+}
+
+/* После открытия — крышка сдвинута, коробка замирает */
+.case-stage--opened .case-box-svg--big {
+  animation: none;
+  transform: translateY(-4px);
+}
+
+.case-stage--opened .case-box-lid {
+  transform: translateY(-16px) translateX(2px) rotate(-8deg);
+}
+
+.case-stage--opened .case-box-lock {
+  opacity: 0;
+}
+
+.case-stage--opened .case-box-glow {
+  opacity: 0.5;
+  animation-duration: 1.6s;
+}
+
+/* ============ РУЛЕТКА ПРОКРУТКИ КЕЙСА ============ */
+
+.case-reel-wrap {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  margin-bottom: 18px;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.case-reel-track {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 4px;
+  will-change: transform;
+}
+
+.case-reel-item {
+  flex: 0 0 auto;
+  width: 80px;
+  height: 80px;
+  margin: 0 5px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.case-reel-item--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 10px var(--rarity-common-glow);
+}
+.case-reel-item--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 10px var(--rarity-uncommon-glow);
+}
+.case-reel-item--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 10px var(--rarity-rare-glow);
+}
+.case-reel-item--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 10px var(--rarity-epic-glow);
+}
+.case-reel-item--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 16px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-reel-pointer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--silver-2);
+  box-shadow: 0 0 10px rgba(241, 241, 244, 0.65);
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.case-reel-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 46px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.case-reel-fade--left {
+  left: 0;
+  background: linear-gradient(90deg, var(--card-bg-2) 0%, transparent 100%);
+}
+
+.case-reel-fade--right {
+  right: 0;
+  background: linear-gradient(270deg, var(--card-bg-2) 0%, transparent 100%);
+}
+
+.case-open-btn {
+  width: 100%;
+  border: none;
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  color: #14151a;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  box-shadow: 0 8px 24px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.case-open-btn:active {
+  transform: scale(0.97);
+}
+
+.case-open-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+
+.case-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 20px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  opacity: 0;
+  animation: case-result-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.case-result[hidden] {
+  display: none;
+}
+
+@keyframes case-result-in {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.case-result-badge {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  padding: 4px 16px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--silver-1), var(--silver-2));
+  color: #131316;
+}
+
+/* Цвет редкости приза — задаётся отдельным классом поверх .case-result-badge */
+.case-result-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 14px var(--rarity-common-glow);
+}
+.case-result-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 14px var(--rarity-uncommon-glow);
+}
+.case-result-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 14px var(--rarity-rare-glow);
+}
+.case-result-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 14px var(--rarity-epic-glow);
+}
+.case-result-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 20px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-result-code {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.case-copy-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.case-copy-btn:active {
+  transform: scale(0.96);
+}
+
+.case-copy-btn--copied {
+  border-color: var(--green);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+}
+
+.case-again-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.case-again-btn[hidden] {
+  display: none;
+}
+
+.case-again-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.case-again-btn:active {
+  transform: scale(0.97);
+}
+
+.case-again-btn:hover {
+  border-color: var(--silver-1);
+}
+
+.case-status {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.case-status.success { color: #4ade80; }
+.case-status.error { color: #f87171; }
+
+/* ============ МИНИ-МЕНЮ С ПРОМОКОДОМ (после открытия кейса) ============ */
+
+.case-prize-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Класс задаёт display:flex, а это правило автора перебивает встроенный
+   UA-стиль "[hidden] { display: none }" по каскаду (author > UA),
+   поэтому модалка иначе оставалась видимой даже с атрибутом hidden —
+   явно возвращаем display:none, когда hidden установлен. */
+.case-prize-modal[hidden] {
+  display: none;
+}
+
+.case-prize-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  /* opacity: 1 — страховка на случай, если анимация ниже по какой-то
+     причине не запустится/не перезапустится повторно. */
+  opacity: 1;
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+@keyframes case-prize-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.case-prize-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  opacity: 1;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes case-prize-card-in {
+  from { opacity: 0; transform: scale(0.88) translateY(14px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.case-prize-modal-badge {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  padding: 5px 18px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--silver-1), var(--silver-2));
+  color: #131316;
+}
+
+.case-prize-modal-badge.case-result-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 14px var(--rarity-common-glow);
+}
+.case-prize-modal-badge.case-result-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 14px var(--rarity-uncommon-glow);
+}
+.case-prize-modal-badge.case-result-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 14px var(--rarity-rare-glow);
+}
+.case-prize-modal-badge.case-result-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 14px var(--rarity-epic-glow);
+}
+.case-prize-modal-badge.case-result-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 20px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-prize-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.case-prize-modal-code {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--card-bg-2);
+}
+
+.case-prize-modal-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.case-prize-modal-ok {
+  width: 100%;
+  margin-top: 6px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: none;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #14151a;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 26px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: transform 0.15s ease;
+}
+
+.case-prize-modal-ok:active {
+  transform: scale(0.97);
+}
+
+.nft-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.nft-modal[hidden] {
+  display: none;
+}
+
+.nft-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  opacity: 1;
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+.nft-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 26px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  opacity: 1;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.nft-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.nft-modal-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.nft-modal-actions {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.nft-modal-btn {
+  flex: 1;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.nft-modal-btn:active {
+  transform: scale(0.97);
+}
+
+.nft-modal-btn--cancel {
+  background: rgba(210, 210, 218, 0.14);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.nft-modal-btn--write {
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* ============ CHECKOUT VIEW ============ */
+
+.view--checkout {
+  padding-top: 20px;
+}
+
+.checkout-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.back-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.back-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.checkout-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 20px;
+  margin-bottom: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.checkout-hero,
+.description-card,
+.view--checkout .option-group {
+  /* opacity: 1 по умолчанию — контент ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не доиграет в конкретном
+     WebView. Раньше базовым состоянием было opacity: 0, и видимость
+     полностью зависела от того, доиграет ли CSS-анимация — если нет,
+     контент оставался невидимым навсегда. Теперь анимация — это только
+     "бонус" поверх уже видимого контента, а не единственный способ его
+     показать. */
+  opacity: 1;
+}
+
+/* Анимация появления навешивается временным классом .co-anim-in из
+   script.js (см. playCheckoutEntrance) при каждом открытии экрана — явное
+   добавление/удаление класса гораздо надёжнее перезапускает CSS-анимацию
+   в Telegram WebView, чем просто переключение display: none -> block. */
+.checkout-hero.co-anim-in,
+.description-card.co-anim-in,
+.view--checkout .option-group.co-anim-in {
+  opacity: 0;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.view--checkout .buy-btn.co-anim-in {
+  animation: rise-in-transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Задержки каскада (animation-delay) выставляются из script.js по индексу
+   элемента — раньше здесь были селекторы :nth-of-type(1)/(2), которые на
+   самом деле не совпадали ни с одним .option-group (nth-of-type считает
+   позицию среди ВСЕХ div-соседей, а не среди элементов с классом
+   .option-group — первые два div-а перед тарифами это .checkout-hero и
+   .description-card), поэтому каскад задержек фактически не работал. */
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rise-in-transform {
+  from { transform: translateY(10px); }
+  to { transform: translateY(0); }
+}
+
+.checkout-hero-icon {
+  flex-shrink: 0;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: linear-gradient(160deg, #2a2a2f, #131315);
+  border: 1px solid var(--border-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--silver-2);
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+}
+
+.checkout-hero-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.checkout-hero-badges {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.checkout-hero-subtitle {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.description-card {
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 18px 20px;
+  margin-bottom: 10px;
+}
+
+.description-card-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 8px;
+}
+
+.description-card-text {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* ============ TAB BAR ============ */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg-black);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  border-radius: 14px;
+  color: var(--text-faint);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+.tab-icon {
+  font-size: 15px;
+  line-height: 1;
+  color: inherit;
+}
+
+.tab-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: inherit;
+}
+
+.tab--active {
+  color: var(--silver-2);
+  opacity: 1;
+  background: rgba(210, 210, 218, 0.12);
+}
+
+.tab--active .tab-label {
+  font-weight: 700;
+}
+
+/* ============ RESPONSIVE ============ */
+
+@media (min-width: 480px) {
+  .product-grid {
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
   }
-}
-
-// ====== Реальная высота вьюпорта (фикс для клавиатуры) ======
-// 100dvh на iOS не всегда пересчитывается, когда открывается клавиатура —
-// из-за этого нижняя часть интерфейса (промокод, кнопка "Купить", таббар)
-// уезжала под клавиатуру и всё "ломалось" визуально. window.visualViewport
-// даёт настоящую видимую высоту, на неё и завязываемся.
-// Заодно, пока клавиатура открыта, прячем нижний таббар — на экране
-// оформления он всё равно не нужен, а место для полей освобождает.
-function setAppHeight() {
-  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", vh + "px");
-
-  const keyboardLikelyOpen = window.innerHeight - vh > 120;
-  document.body.classList.toggle("keyboard-open", keyboardLikelyOpen);
-}
-
-setAppHeight();
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", setAppHeight);
-} else {
-  window.addEventListener("resize", setAppHeight);
-}
-
-// Также ещё раз "поджимаем" жест закрытия шторки при каждом ресайзе —
-// на некоторых клиентах открытие клавиатуры сбрасывает это состояние.
-if (tg) {
-  window.addEventListener("resize", () => {
-    try {
-      tg.disableVerticalSwipes?.();
-    } catch (err) {
-      // игнорируем
-    }
-  });
-}
-
-// ====== Сплэш / плавное появление ======
-const splash = document.getElementById("splash");
-const app = document.getElementById("app");
-
-let splashDone = false;
-
-function hideSplash() {
-  if (splashDone) return;
-  splashDone = true;
-  splash.classList.add("splash--hidden");
-  app.classList.add("app--ready");
-  initApp();
-}
-
-// Сплэш показывается РОВНО 4 секунды — фиксированная длительность, а не
-// "пока реально грузится". Заодно эти 4 секунды не тратятся впустую: пока
-// крутится спиннер, в фоне прогреваются шрифты и скрытые вкладки (см.
-// warmUpHiddenViews/preloadFonts ниже) — это устраняет баг с задержкой
-// появления интерфейса при первом открытии "Моих промокодов" или
-// "Оформления заказа".
-const SPLASH_DURATION = 2500;
-setTimeout(hideSplash, SPLASH_DURATION);
-
-// ====== Рендер карточек товаров ======
-const productList = document.getElementById("productList");
-const cardTemplate = document.getElementById("productCardTemplate");
-const durationTemplate = document.getElementById("durationOptionTemplate");
-
-function renderProducts() {
-  productList.innerHTML = "";
-
-  PRODUCTS.forEach((product, index) => {
-    const node = cardTemplate.content.cloneNode(true);
-    const card = node.querySelector(".card");
-    card.dataset.productId = product.id;
-    card.style.setProperty("--card-index", index);
-
-    const row = node.querySelector(".card-row");
-    const badgesEl = node.querySelector(".card-row-badges");
-
-    (product.badges || []).forEach((badgeText) => {
-      const b = document.createElement("span");
-      b.className = "badge-tag";
-      b.textContent = badgeText;
-      badgesEl.appendChild(b);
-    });
-
-    node.querySelector(".card-row-initial").textContent = product.initial;
-    node.querySelector(".card-row-title").textContent = product.title;
-    node.querySelector(".card-row-subtitle").textContent = product.subtitle;
-    node.querySelector(".price-value").textContent = product.price;
-
-    // Клик по карточке — переходим на отдельный экран оформления покупки
-    row.addEventListener("click", () => {
-      openCheckout(product);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    productList.appendChild(node);
-  });
-}
-
-function getFinalPrice(basePrice, discountPercent) {
-  if (!discountPercent) return basePrice;
-  return Math.max(1, Math.round(basePrice * (1 - discountPercent / 100)));
-}
-
-function updateBuyButtonLabel(buyBtnText, product, durationCode) {
-  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-  const finalPrice = getFinalPrice(duration.price, checkoutDiscountPercent);
-
-  if (checkoutDiscountPercent > 0 && finalPrice < duration.price) {
-    checkoutOldPrice.textContent = `${duration.price} ★`;
-    checkoutOldPrice.hidden = false;
-  } else {
-    checkoutOldPrice.hidden = true;
-  }
-
-  buyBtnText.textContent = "Нажмите для оплаты Telegram Stars";
-}
-
-// Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
-// способа оплаты: звёзды показывают обычную цену, NFT — предложение
-// узнать цену у владельца (оформляется вручную), RU карта — цену в
-// рублях из RU_CARD_PRICES.
-function applyDurationPrice(priceEl, duration) {
-  if (!priceEl) return;
-
-  if (checkoutPaymentMethod === "nft") {
-    priceEl.classList.add("duration-option-price--note");
-    priceEl.textContent = "Узнайте цену у владельца";
-  } else if (checkoutPaymentMethod === "card") {
-    priceEl.classList.remove("duration-option-price--note");
-    const rubPrice = RU_CARD_PRICES[duration.code];
-    priceEl.innerHTML = rubPrice != null ? `${rubPrice} ₽` : "—";
-  } else {
-    priceEl.classList.remove("duration-option-price--note");
-    priceEl.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
-  }
-}
-
-// Перерисовывает цены во всех уже отрендеренных карточках тарифа —
-// вызывается при смене способа оплаты, чтобы цены сразу обновились без
-// необходимости заново открывать экран оформления.
-function refreshDurationPrices() {
-  checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
-    const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
-    if (!duration) return;
-    applyDurationPrice(btn.querySelector(".duration-option-price"), duration);
-  });
-}
-
-function setCardStatus(statusEl, text, type = "") {
-  statusEl.textContent = text;
-  statusEl.className = "card-status" + (type ? " " + type : "");
-}
-
-function setPromoStatus(text, type = "") {
-  checkoutPromoStatus.textContent = text;
-  checkoutPromoStatus.className = "promo-status" + (type ? " " + type : "");
-}
-
-async function getInvoiceLink(productId, durationCode, promoCode) {
-  const initData = tg ? tg.initData : "";
-
-  const response = await fetch("/create_invoice", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      product_id: productId,
-      duration: durationCode,
-      promo_code: promoCode || undefined,
-      init_data: initData,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Сервер не смог создать инвойс");
-  }
-
-  const data = await response.json();
-  if (!data.invoice_link) {
-    throw new Error("Сервер не вернул ссылку на инвойс");
-  }
-
-  return data;
-}
-
-async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
-  if (!tg) {
-    setCardStatus(statusEl, "Открой это приложение внутри Telegram", "error");
-    return;
-  }
-
-  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-
-  buyBtn.disabled = true;
-  buyBtnText.textContent = "Открываем оплату...";
-  setCardStatus(statusEl, "");
-
-  try {
-    const invoiceData = await getInvoiceLink(product.id, durationCode, checkoutPromoCode);
-    const invoiceLink = invoiceData.invoice_link;
-
-    // Сервер — источник истины по промокодам. Если он не распознал код,
-    // который клиент посчитал валидным (например, код успели использовать
-    // в другом месте, он истёк, или состояние сервера сбросилось), нельзя
-    // просто показать текст ошибки поверх — нужно ПОЛНОСТЬЮ сбросить
-    // визуальное состояние "применено", иначе кнопка промокода остаётся
-    // зелёной ("Применено"), а под ней текст говорит, что код не найден —
-    // именно это выглядело как баг на скриншоте.
-    if (checkoutPromoCode && invoiceData.promo_invalid) {
-      checkoutPromoCode = null;
-      checkoutDiscountPercent = 0;
-      checkoutPromoApply.textContent = "Применить";
-      checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-      checkoutPromoInput.disabled = false;
-      checkoutPromoInput.value = "";
-      setPromoStatus("Промокод не найден или уже использован, покупка по полной цене", "error");
-    }
-
-    tg.openInvoice(invoiceLink, (status) => {
-      buyBtn.disabled = false;
-      updateBuyButtonLabel(buyBtnText, product, durationCode);
-
-      if (status === "paid") {
-        setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
-        tg.HapticFeedback?.notificationOccurred("success");
-      } else if (status === "cancelled") {
-        setCardStatus(statusEl, "Оплата отменена");
-      } else if (status === "failed") {
-        setCardStatus(statusEl, "Оплата не прошла", "error");
-      } else {
-        setCardStatus(statusEl, "Статус: " + status);
-      }
-    });
-  } catch (err) {
-    buyBtn.disabled = false;
-    updateBuyButtonLabel(buyBtnText, product, durationCode);
-    setCardStatus(statusEl, err.message || "Ошибка при создании оплаты", "error");
-  }
-}
-
-// ====== Экран оформления покупки (checkout) ======
-const viewCheckout = document.getElementById("view-checkout");
-const checkoutTitle = document.getElementById("checkoutTitle");
-const checkoutInitial = document.getElementById("checkoutInitial");
-const checkoutSubtitle = document.getElementById("checkoutSubtitle");
-const checkoutDescription = document.getElementById("checkoutDescription");
-const checkoutBadges = document.getElementById("checkoutBadges");
-const checkoutDurations = document.getElementById("checkoutDurations");
-const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
-const checkoutBuyText = document.getElementById("checkoutBuyText");
-const checkoutOldPrice = document.getElementById("checkoutOldPrice");
-const checkoutStatus = document.getElementById("checkoutStatus");
-const checkoutBack = document.getElementById("checkoutBack");
-const checkoutPromoInput = document.getElementById("checkoutPromoInput");
-const checkoutPromoApply = document.getElementById("checkoutPromoApply");
-const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
-
-// ====== Способ оплаты (Telegram Stars / NFT / Русская карта) ======
-const paymentSelect = document.getElementById("paymentSelect");
-const paymentToggle = document.getElementById("paymentToggle");
-const paymentToggleIcon = document.getElementById("paymentToggleIcon");
-const paymentToggleLabel = document.getElementById("paymentToggleLabel");
-const paymentOptions = document.getElementById("paymentOptions");
-const checkoutManualBtn = document.getElementById("checkoutManualBtn");
-const nftModal = document.getElementById("nftModal");
-const nftModalBackdrop = document.getElementById("nftModalBackdrop");
-const nftModalTitle = document.getElementById("nftModalTitle");
-const nftModalText = document.getElementById("nftModalText");
-const nftModalCancel = document.getElementById("nftModalCancel");
-const nftModalWrite = document.getElementById("nftModalWrite");
-
-// Telegram-логин владельца, которому пишет пользователь при оплате
-// способами, оформляемыми вручную (NFT, Русская карта).
-const MANUAL_PAYMENT_OWNER_USERNAME = "meaninglessperson";
-
-// Способы оплаты, которые оформляются не автоматически, а перепиской с
-// владельцем в личных сообщениях. Чтобы добавить новый такой способ,
-// достаточно добавить сюда запись и кнопку .payment-option с тем же
-// data-method в разметке.
-const MANUAL_PAYMENT_METHODS = {
-  nft: {
-    buyLabel: "Нажмите для оплаты NFT",
-    modalTitle: "Оплата NFT",
-    modalText: "Напишите владельцу, чтобы оформить оплату NFT",
-  },
-  card: {
-    buyLabel: "Нажмите для оплаты RU картой",
-    modalTitle: "Оплата RU картой",
-    modalText: "Напишите владельцу, чтобы оформить оплату RU картой",
-  },
-};
-
-let checkoutPaymentMethod = "stars";
-
-function updatePaymentToggleSummary(method) {
-  const optionBtn = paymentOptions.querySelector(`.payment-option[data-method="${method}"]`);
-  if (!optionBtn) return;
-
-  const icon = optionBtn.querySelector("svg");
-  paymentToggleIcon.innerHTML = icon ? icon.outerHTML : "";
-  paymentToggleLabel.textContent = optionBtn.querySelector(".payment-option-label")?.textContent || "";
-}
-
-function setPaymentOptionsOpen(open) {
-  paymentOptions.classList.toggle("payment-options--open", open);
-  paymentToggle.classList.toggle("payment-toggle--open", open);
-  paymentToggle.setAttribute("aria-expanded", String(open));
-}
-
-function togglePaymentOptions() {
-  setPaymentOptionsOpen(!paymentOptions.classList.contains("payment-options--open"));
-}
-
-paymentToggle.addEventListener("click", () => {
-  togglePaymentOptions();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-function setPaymentMethod(method) {
-  checkoutPaymentMethod = method;
-
-  paymentOptions.querySelectorAll(".payment-option").forEach((btn) => {
-    const isSelected = btn.dataset.method === method;
-    btn.classList.toggle("payment-option--selected", isSelected);
-    // Выбранный способ не нужно показывать в самом списке — он и так
-    // виден в свёрнутой шапке (paymentToggle), а в списке остаются
-    // только варианты, на которые можно переключиться.
-    btn.hidden = isSelected;
-  });
-  updatePaymentToggleSummary(method);
-
-  const manualConfig = MANUAL_PAYMENT_METHODS[method];
-  if (manualConfig) {
-    checkoutBuyBtn.hidden = true;
-    checkoutManualBtn.hidden = false;
-    checkoutManualBtn.textContent = manualConfig.buyLabel;
-  } else {
-    checkoutManualBtn.hidden = true;
-    checkoutBuyBtn.hidden = false;
-  }
-
-  refreshDurationPrices();
-}
-
-paymentOptions.addEventListener("click", (e) => {
-  const btn = e.target.closest(".payment-option");
-  if (!btn) return;
-
-  setPaymentMethod(btn.dataset.method);
-  setCardStatus(checkoutStatus, "");
-  setPaymentOptionsOpen(false);
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// Закрыть список способов оплаты по клику вне него.
-document.addEventListener("click", (e) => {
-  if (!paymentSelect.contains(e.target)) {
-    setPaymentOptionsOpen(false);
-  }
-});
-
-function showNftModal() {
-  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
-  if (manualConfig) {
-    nftModalTitle.textContent = manualConfig.modalTitle;
-    nftModalText.textContent = manualConfig.modalText;
-  }
-
-  nftModal.hidden = false;
-
-  [nftModalBackdrop, nftModal.querySelector(".nft-modal-card")].forEach((el) => {
-    if (!el) return;
-    el.style.animation = "none";
-    void el.offsetHeight;
-    el.style.animation = "";
-  });
-}
-
-function hideNftModal() {
-  nftModal.hidden = true;
-}
-
-checkoutManualBtn.addEventListener("click", () => {
-  showNftModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-nftModalCancel.addEventListener("click", () => {
-  hideNftModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-nftModalBackdrop.addEventListener("click", () => {
-  hideNftModal();
-});
-
-nftModalWrite.addEventListener("click", () => {
-  hideNftModal();
-  // Открываем личные сообщения с владельцем в Telegram. tg.openTelegramLink
-  // корректно работает внутри Mini App, window.open — запасной вариант
-  // для случаев, когда приложение открыто вне Telegram.
-  if (tg?.openTelegramLink) {
-    tg.openTelegramLink(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`);
-  } else {
-    window.open(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`, "_blank");
-  }
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// Элементы, у которых есть CSS-анимация появления, навешиваемая временным
-// классом .co-anim-in (см. playCheckoutEntrance). Базовый CSS теперь всегда
-// держит их видимыми (opacity: 1) — анимация лишь временно "занижает"
-// opacity на время своего проигрывания, а не является единственным
-// способом их показать.
-const checkoutAnimatedEls = [
-  viewCheckout.querySelector(".checkout-hero"),
-  viewCheckout.querySelector(".description-card"),
-  ...viewCheckout.querySelectorAll(".option-group"),
-  checkoutBuyBtn,
-  checkoutManualBtn,
-].filter(Boolean);
-
-let checkoutAnimSafetyTimer = null;
-
-// Проигрывает анимацию появления карточек экрана оформления. Класс
-// .co-anim-in снимается и добавляется заново при КАЖДОМ вызове (с reflow
-// между ними), чтобы анимация гарантированно перезапускалась даже при
-// повторном открытии одного и того же экрана — переключение класса
-// надёжнее в Telegram WebView, чем просто display: none -> block.
-//
-// Плюс: если по какой-то причине анимация не доиграет и не снимет класс
-// сама (animation-fill-mode: both держит финальный кадр, но мало ли),
-// через небольшую страховочную паузу класс снимается принудительно —
-// контент в любом случае останется видимым, потому что базовый CSS для
-// этих элементов — opacity: 1, а не 0.
-function playCheckoutEntrance() {
-  checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
-  void viewCheckout.offsetHeight; // форсируем reflow перед повторным добавлением класса
-
-  checkoutAnimatedEls.forEach((el, index) => {
-    el.style.animationDelay = `${index * 70 + 60}ms`;
-    el.classList.add("co-anim-in");
-  });
-
-  clearTimeout(checkoutAnimSafetyTimer);
-  checkoutAnimSafetyTimer = setTimeout(() => {
-    checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
-  }, 900);
-}
-
-let checkoutProduct = null;
-let checkoutDuration = DURATIONS[0].code;
-let checkoutPromoCode = null;
-let checkoutDiscountPercent = 0;
-
-function openCheckout(product, prefillPromoCode) {
-  playCheckoutEntrance();
-
-  checkoutProduct = product;
-  checkoutDuration = DURATIONS[0].code;
-  checkoutPromoCode = null;
-  checkoutDiscountPercent = 0;
-  checkoutPromoInput.value = "";
-  checkoutPromoApply.textContent = "Применить";
-  checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-  checkoutPromoApply.disabled = false;
-  checkoutPromoInput.disabled = false;
-  setPromoStatus("");
-  setPaymentMethod("stars");
-  hideNftModal();
-
-  checkoutTitle.textContent = product.title;
-  checkoutInitial.textContent = product.initial;
-  checkoutSubtitle.textContent = product.subtitle;
-  checkoutDescription.textContent = product.description || "";
-
-  checkoutBadges.innerHTML = "";
-  (product.badges || []).forEach((badgeText) => {
-    const b = document.createElement("span");
-    b.className = "badge-tag";
-    b.textContent = badgeText;
-    checkoutBadges.appendChild(b);
-  });
-
-  checkoutDurations.innerHTML = "";
-  DURATIONS.forEach((duration, index) => {
-    const dNode = durationTemplate.content.cloneNode(true);
-    const dBtn = dNode.querySelector(".duration-option");
-    dBtn.dataset.duration = duration.code;
-    dBtn.classList.toggle("duration-option--selected", index === 0);
-    dNode.querySelector(".duration-option-label").textContent = duration.label;
-    applyDurationPrice(dNode.querySelector(".duration-option-price"), duration);
-    checkoutDurations.appendChild(dNode);
-  });
-
-  checkoutBuyBtn.disabled = false;
-  updateBuyButtonLabel(checkoutBuyText, product, checkoutDuration);
-  setCardStatus(checkoutStatus, "");
-
-  switchView("checkout");
-
-  // Если экран открыт с уже готовым промокодом (например, по кнопке
-  // "Использовать" из "Моих промокодов") — подставляем его в поле и сразу
-  // проверяем/применяем через сервер, как при обычном ручном вводе.
-  if (prefillPromoCode) {
-    checkoutPromoInput.value = prefillPromoCode;
-    applyPromoCode();
-  }
-}
-
-checkoutDurations.addEventListener("click", (e) => {
-  const btn = e.target.closest(".duration-option");
-  if (!btn || !checkoutProduct) return;
-
-  checkoutDurations.querySelectorAll(".duration-option").forEach((b) => {
-    b.classList.toggle("duration-option--selected", b === btn);
-  });
-
-  checkoutDuration = btn.dataset.duration;
-  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-async function applyPromoCode() {
-  const rawCode = checkoutPromoInput.value.trim();
-
-  if (!rawCode) {
-    setPromoStatus("Введите промокод", "error");
-    return;
-  }
-
-  checkoutPromoApply.disabled = true;
-  setPromoStatus("Проверяем промокод...");
-
-  let data;
-  try {
-    const response = await fetch(`/validate_promo?code=${encodeURIComponent(rawCode)}`);
-    data = await response.json();
-  } catch (err) {
-    checkoutPromoApply.disabled = false;
-    setPromoStatus("Не удалось проверить промокод, попробуй ещё раз", "error");
-    return;
-  }
-
-  checkoutPromoApply.disabled = false;
-
-  if (!data.valid) {
-    checkoutPromoCode = null;
-    checkoutDiscountPercent = 0;
-    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-    checkoutPromoApply.textContent = "Применить";
-    checkoutPromoInput.disabled = false;
-    setPromoStatus("Промокод не найден или уже использован", "error");
-    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-    tg?.HapticFeedback?.notificationOccurred("error");
-    return;
-  }
-
-  checkoutPromoCode = rawCode;
-  checkoutDiscountPercent = data.discount_percent;
-  checkoutPromoApply.textContent = "Применено";
-  checkoutPromoApply.classList.add("promo-apply-btn--applied");
-  checkoutPromoInput.disabled = true;
-  setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
-  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-  tg?.HapticFeedback?.notificationOccurred("success");
-}
-
-checkoutPromoApply.addEventListener("click", () => {
-  if (!checkoutProduct) return;
-
-  // Повторный клик по уже применённому промокоду снимает его —
-  // так пользователь может вернуться к полной цене.
-  if (checkoutPromoCode) {
-    checkoutPromoCode = null;
-    checkoutDiscountPercent = 0;
-    checkoutPromoInput.disabled = false;
-    checkoutPromoInput.value = "";
-    checkoutPromoApply.textContent = "Применить";
-    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-    setPromoStatus("");
-    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-    return;
-  }
-
-  applyPromoCode();
-});
-
-checkoutPromoInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    applyPromoCode();
-  }
-});
-
-checkoutPromoInput.addEventListener("focus", () => {
-  // Небольшая задержка нужна, чтобы клавиатура успела появиться и
-  // визуальный вьюпорт пересчитался — иначе scrollIntoView сработает
-  // по ещё не сжавшейся высоте и промахнётся.
-  setTimeout(() => {
-    checkoutPromoInput.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, 300);
-});
-
-checkoutBuyBtn.addEventListener("click", () => {
-  if (!checkoutProduct) return;
-  handleBuy(checkoutProduct, checkoutDuration, checkoutBuyBtn, checkoutBuyText, checkoutStatus);
-});
-
-checkoutBack.addEventListener("click", () => {
-  switchView("shop");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// ====== Вкладки ======
-const tabs = document.querySelectorAll(".tab");
-const views = {
-  shop: document.getElementById("view-shop"),
-  profile: document.getElementById("view-profile"),
-  checkout: viewCheckout,
-  case: document.getElementById("view-case"),
-  mypromos: document.getElementById("view-mypromos"),
-};
-
-// Экраны, которые визуально являются "внутренними" для другого раздела —
-// используются, чтобы подсвечивать правильную вкладку в таббаре, когда
-// открыт не сам раздел, а вложенный в него экран.
-const VIEW_PARENT_TAB = {
-  checkout: "shop",
-  case: "shop",
-  mypromos: "profile",
-};
-
-function switchView(target) {
-  Object.entries(views).forEach(([key, el]) => {
-    el.classList.toggle("view--active", key === target);
-  });
-
-  // Подсвечиваем вкладку раздела-родителя, если открыт вложенный экран
-  // (оформление/кейс — внутри "Магазина", мои промокоды — внутри "Профиля")
-  const activeTabKey = VIEW_PARENT_TAB[target] || target;
-  tabs.forEach((t) => t.classList.toggle("tab--active", t.dataset.view === activeTabKey));
-
-  // Сбрасываем прокрутку контейнера .app в начало при каждом переключении
-  // экрана. Раньше этого не было: если пользователь успевал прокрутить
-  // страницу вниз, следующий открытый экран (например, чекаут) рендерился
-  // корректно, но оказывался вне видимой области — выглядело так, будто
-  // "интерфейс не открылся". Это и была причина бага "через раз".
-  app.scrollTop = 0;
-
-  // Гарантированно перезапускаем анимацию появления экрана: снимаем
-  // класс, форсируем reflow, навешиваем заново. Без явного reflow между
-  // remove и add браузер может "склеить" эти два изменения в одно и не
-  // перезапустить одну и ту же именованную CSS-анимацию повторно — именно
-  // это было причиной бага "первый раз открывается нормально, второй раз
-  // экран будто не появляется пару секунд" (сам экран при этом уже виден
-  // благодаря opacity: 1 по умолчанию, но без свежей анимации переход
-  // выглядел "залипшим").
-  // ВАЖНО: раньше здесь стоял `void activeView.offsetHeight;` сразу после
-  // remove/перед add — это форсированный синхронный reflow (layout
-  // thrashing) прямо в обработчике клика, да ещё сразу после записи
-  // app.scrollTop = 0 и смены классов выше. Браузер был вынужден
-  // синхронно пересчитать layout всей страницы в тот же тик — именно
-  // это ощущалось как подлагивание/рывок в момент переключения вкладок.
-  // Двойной requestAnimationFrame даёт тот же гарантированный перезапуск
-  // именованной CSS-анимации (браузер успевает "увидеть" класс без
-  // анимации на одном кадре и с анимацией на следующем), но не блокирует
-  // основной поток синхронным чтением layout-свойства.
-  const activeView = views[target];
-  if (activeView) {
-    activeView.classList.remove("view-anim-in");
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        activeView.classList.add("view-anim-in");
-      });
-    });
-  }
-}
-
-tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    switchView(tab.dataset.view);
-    tg?.HapticFeedback?.selectionChanged();
-  });
-});
-
-// ====== Прогрев скрытых вкладок и шрифтов (фикс задержки при первом входе) ======
-// Раньше "Мои промокоды", "Оформление заказа" и "Кейс" были скрыты через
-// display: none и браузер вообще не считал для них стили/раскладку и не
-// подгружал нужные жирные начертания шрифта — всё это происходило только
-// в момент реального открытия вкладки, поэтому иногда интерфейс появлялся
-// не сразу, а через пару секунд после клика. Теперь мы один раз, ещё пока
-// показан сплэш, ненадолго и невидимо (visibility: hidden, вне потока
-// документа) показываем эти экраны — браузер успевает посчитать всё
-// заранее, и реальное открытие вкладки происходит мгновенно.
-function warmUpHiddenViews() {
-  const hiddenViews = Object.entries(views)
-    .filter(([key]) => key !== "shop")
-    .map(([, el]) => el)
-    .filter(Boolean);
-
-  hiddenViews.forEach((el) => {
-    el.style.display = "block";
-    el.style.visibility = "hidden";
-    el.style.position = "absolute";
-    el.style.pointerEvents = "none";
-  });
-
-  // Форсируем расчёт layout прямо сейчас, а не откладываем его на потом
-  void document.body.offsetHeight;
-
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      hiddenViews.forEach((el) => {
-        el.style.display = "";
-        el.style.visibility = "";
-        el.style.position = "";
-        el.style.pointerEvents = "";
-      });
-    });
-  });
-}
-
-// Заранее догружаем начертания шрифта, которые реально используются в
-// заголовках/бейджах на этих вкладках — иначе первая отрисовка текста
-// такой жирности ждёт сетевой запрос к Google Fonts.
-function preloadFonts() {
-  if (!document.fonts || !document.fonts.load) return;
-  ["600 16px 'Golos Text'", "700 16px 'Golos Text'", "800 16px 'Golos Text'", "900 16px 'Golos Text'"]
-    .forEach((font) => document.fonts.load(font).catch(() => {}));
-}
-
-warmUpHiddenViews();
-preloadFonts();
-
-// ====== Профиль ======
-const profileAvatar = document.getElementById("profileAvatar");
-const profileAvatarFallback = document.getElementById("profileAvatarFallback");
-const profileAvatarLetter = document.getElementById("profileAvatarLetter");
-const profileName = document.getElementById("profileName");
-const profileUsername = document.getElementById("profileUsername");
-
-// Простая иконка пользователя — показывается, если у нас вообще нет
-// данных о человеке (не открыто из Telegram)
-const GUEST_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>`;
-
-function showAvatarFallback(letterOrIcon) {
-  profileAvatar.hidden = true;
-  profileAvatar.removeAttribute("src");
-  profileAvatarFallback.hidden = false;
-  profileAvatarLetter.innerHTML = letterOrIcon;
-}
-
-function fillProfileFromTelegram() {
-  const user = tg?.initDataUnsafe?.user;
-
-  if (!user) {
-    profileName.textContent = "Гость";
-    profileUsername.textContent = "Открой из Telegram";
-    showAvatarFallback(GUEST_ICON_SVG);
-    return;
-  }
-
-  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  profileName.textContent = fullName || "Без имени";
-  profileUsername.textContent = user.username ? "@" + user.username : "Без ника";
-
-  const firstLetter = (user.first_name || user.username || "?").charAt(0).toUpperCase();
-
-  if (user.photo_url) {
-    loadAvatarImage(user.photo_url, firstLetter);
-  } else {
-    // photo_url не всегда доступен в initData из соображений приватности —
-    // пробуем получить фото через бэкенд (бот умеет запрашивать его у Telegram)
-    loadAvatarImage(`/avatar?user_id=${user.id}`, firstLetter);
-  }
-}
-
-function loadAvatarImage(src, fallbackLetter) {
-  // Показываем букву сразу, чтобы не было пустоты, пока грузится фото
-  showAvatarFallback(fallbackLetter);
-
-  const testImg = new Image();
-  testImg.onload = () => {
-    profileAvatar.src = src;
-    profileAvatar.hidden = false;
-    profileAvatarFallback.hidden = true;
-  };
-  testImg.onerror = () => {
-    // Фото недоступно — так и оставляем аккуратный фолбэк с буквой
-    showAvatarFallback(fallbackLetter);
-  };
-  testImg.src = src;
-}
-
-// ====== Мои промокоды (профиль) ======
-const myPromosBtn = document.getElementById("myPromosBtn");
-const myPromosBack = document.getElementById("myPromosBack");
-const promoList = document.getElementById("promoList");
-const promoListEmpty = document.getElementById("promoListEmpty");
-const promoListActions = document.getElementById("promoListActions");
-const promoSelectModeBtn = document.getElementById("promoSelectModeBtn");
-const promoCancelSelectBtn = document.getElementById("promoCancelSelectBtn");
-const promoDeleteSelectedBtn = document.getElementById("promoDeleteSelectedBtn");
-const promoSelectedCount = document.getElementById("promoSelectedCount");
-const promoDeleteAllBtn = document.getElementById("promoDeleteAllBtn");
-
-// Определяет визуальную "редкость" промокода — та же логика, что и для
-// призов кейса, чтобы бирки выглядели одинаково по всему приложению.
-function promoRarityKeyFor(discountPercent) {
-  if (discountPercent >= 50) return "legendary";
-  if (discountPercent >= 30) return "epic";
-  if (discountPercent >= 15) return "rare";
-  if (discountPercent >= 10) return "uncommon";
-  return "common";
-}
-
-function setPromoListEmpty(text) {
-  promoListEmpty.textContent = text;
-  promoListEmpty.hidden = false;
-}
-
-// Переносит пользователя на экран оформления единственного товара с уже
-// подставленным и применённым промокодом — код при этом всё ещё проверяется
-// сервером через /validate_promo, как и при ручном вводе.
-function useMyPromoCode(code) {
-  const product = PRODUCTS[0];
-  if (!product) return;
-  openCheckout(product, code);
-}
-
-// Текущий список загруженных кодов и выбранные для удаления — хранится
-// отдельно от DOM, чтобы удобно фильтровать/пересчитывать счётчик.
-let myPromoCodes = [];
-let selectedPromoCodes = new Set();
-let isSelectingPromos = false;
-
-function updatePromoSelectionUI() {
-  const count = selectedPromoCodes.size;
-  promoSelectedCount.textContent = String(count);
-  promoDeleteSelectedBtn.disabled = count === 0;
-
-  promoList.querySelectorAll(".promo-list-item").forEach((row) => {
-    const code = row.dataset.code;
-    row.classList.toggle("promo-list-item--selected", selectedPromoCodes.has(code));
-    const checkbox = row.querySelector(".promo-item-checkbox");
-    if (checkbox) checkbox.checked = selectedPromoCodes.has(code);
-  });
-}
-
-function enterPromoSelectMode() {
-  if (!myPromoCodes.length) return;
-  isSelectingPromos = true;
-  selectedPromoCodes.clear();
-  promoList.classList.add("promo-list--selecting");
-  promoSelectModeBtn.hidden = true;
-  promoDeleteAllBtn.hidden = true;
-  promoDeleteSelectedBtn.hidden = false;
-  promoCancelSelectBtn.hidden = false;
-  updatePromoSelectionUI();
-}
-
-function exitPromoSelectMode() {
-  isSelectingPromos = false;
-  selectedPromoCodes.clear();
-  promoList.classList.remove("promo-list--selecting");
-  promoSelectModeBtn.hidden = false;
-  promoDeleteAllBtn.hidden = false;
-  promoDeleteSelectedBtn.hidden = true;
-  promoCancelSelectBtn.hidden = true;
-  updatePromoSelectionUI();
-}
-
-function togglePromoSelected(code) {
-  if (selectedPromoCodes.has(code)) {
-    selectedPromoCodes.delete(code);
-  } else {
-    selectedPromoCodes.add(code);
-  }
-  updatePromoSelectionUI();
-}
-
-function renderMyPromoCodes(codes) {
-  myPromoCodes = codes;
-  promoList.innerHTML = "";
-
-  if (!codes.length) {
-    setPromoListEmpty("Пока нет неиспользованных промокодов — открой кейс в магазине, чтобы получить скидку.");
-    promoListActions.hidden = true;
-    exitPromoSelectMode();
-    return;
-  }
-
-  promoListEmpty.hidden = true;
-  promoListActions.hidden = false;
-
-  codes.forEach((item, index) => {
-    const row = document.createElement("div");
-    row.className = "promo-list-item";
-    row.style.setProperty("--promo-index", index);
-    row.dataset.code = item.code;
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "promo-list-item-checkbox promo-item-checkbox";
-    checkbox.setAttribute("aria-label", "Выбрать промокод " + item.code);
-    checkbox.addEventListener("click", (e) => e.stopPropagation());
-    checkbox.addEventListener("change", () => {
-      togglePromoSelected(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    const badge = document.createElement("span");
-    badge.className = "promo-list-item-badge promo-badge--" + promoRarityKeyFor(item.discount_percent);
-    badge.textContent = `-${item.discount_percent}%`;
-
-    const codeText = document.createElement("span");
-    codeText.className = "promo-list-item-code";
-    codeText.textContent = item.code;
-
-    const useBtn = document.createElement("button");
-    useBtn.className = "promo-list-item-use-btn";
-    useBtn.type = "button";
-    useBtn.textContent = "Использовать";
-    useBtn.addEventListener("click", () => {
-      if (isSelectingPromos) {
-        togglePromoSelected(item.code);
-        tg?.HapticFeedback?.selectionChanged();
-        return;
-      }
-      useMyPromoCode(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    row.appendChild(checkbox);
-    row.appendChild(badge);
-    row.appendChild(codeText);
-    row.appendChild(useBtn);
-
-    // В режиме выбора клик по всей строке тоже переключает чекбокс —
-    // не нужно целиться точно в маленький квадратик.
-    row.addEventListener("click", () => {
-      if (!isSelectingPromos) return;
-      checkbox.checked = !checkbox.checked;
-      togglePromoSelected(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    promoList.appendChild(row);
-  });
-
-  updatePromoSelectionUI();
-}
-
-async function loadMyPromoCodes() {
-  promoList.innerHTML = "";
-  promoListEmpty.hidden = true;
-  exitPromoSelectMode();
-
-  try {
-    const response = await fetch("/my_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-
-    if (!response.ok) throw new Error("bad response");
-    const data = await response.json();
-    renderMyPromoCodes(data.codes || []);
-  } catch (err) {
-    promoListActions.hidden = true;
-    setPromoListEmpty("Не удалось загрузить промокоды, попробуй ещё раз позже.");
-  }
-}
-
-// Общий помощник для запроса подтверждения — использует нативный диалог
-// Telegram Mini App, если он доступен, иначе обычный confirm() браузера.
-function confirmAction(message) {
-  return new Promise((resolve) => {
-    if (tg?.showConfirm) {
-      tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
-    } else {
-      resolve(window.confirm(message));
-    }
-  });
-}
-
-async function deleteSelectedPromoCodes() {
-  const codes = Array.from(selectedPromoCodes);
-  if (!codes.length) return;
-
-  const confirmed = await confirmAction(
-    codes.length === 1
-      ? "Удалить выбранный промокод?"
-      : `Удалить выбранные промокоды (${codes.length})?`
-  );
-  if (!confirmed) return;
-
-  promoDeleteSelectedBtn.disabled = true;
-  try {
-    const response = await fetch("/delete_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "", codes }),
-    });
-    if (!response.ok) throw new Error("bad response");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    await loadMyPromoCodes();
-  } catch (err) {
-    tg?.HapticFeedback?.notificationOccurred("error");
-    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
-  }
-}
-
-async function deleteAllPromoCodes() {
-  if (!myPromoCodes.length) return;
-
-  const confirmed = await confirmAction("Удалить все промокоды без возможности восстановления?");
-  if (!confirmed) return;
-
-  promoDeleteAllBtn.disabled = true;
-  try {
-    const response = await fetch("/delete_all_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-    if (!response.ok) throw new Error("bad response");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    await loadMyPromoCodes();
-  } catch (err) {
-    tg?.HapticFeedback?.notificationOccurred("error");
-    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
-  } finally {
-    promoDeleteAllBtn.disabled = false;
-  }
-}
-
-promoSelectModeBtn.addEventListener("click", () => {
-  enterPromoSelectMode();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-promoCancelSelectBtn.addEventListener("click", () => {
-  exitPromoSelectMode();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-promoDeleteSelectedBtn.addEventListener("click", () => {
-  deleteSelectedPromoCodes();
-});
-
-promoDeleteAllBtn.addEventListener("click", () => {
-  deleteAllPromoCodes();
-});
-
-myPromosBtn.addEventListener("click", () => {
-  switchView("mypromos");
-  loadMyPromoCodes();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-myPromosBack.addEventListener("click", () => {
-  switchView("profile");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// ====== Кейс с промокодом ======
-const caseEntryCard = document.getElementById("caseEntryCard");
-const caseBack = document.getElementById("caseBack");
-const caseStage = document.getElementById("caseStage");
-const caseOpenBtn = document.getElementById("caseOpenBtn");
-const caseResult = document.getElementById("caseResult");
-const caseResultBadge = document.getElementById("caseResultBadge");
-const caseResultCode = document.getElementById("caseResultCode");
-const caseCopyBtn = document.getElementById("caseCopyBtn");
-const caseAgainBtn = document.getElementById("caseAgainBtn");
-const caseStatus = document.getElementById("caseStatus");
-const caseReelWrap = document.getElementById("caseReelWrap");
-const caseReelTrack = document.getElementById("caseReelTrack");
-const casePrizeModal = document.getElementById("casePrizeModal");
-const casePrizeModalBackdrop = document.getElementById("casePrizeModalBackdrop");
-const casePrizeModalBadge = document.getElementById("casePrizeModalBadge");
-const casePrizeModalCode = document.getElementById("casePrizeModalCode");
-const casePrizeModalOk = document.getElementById("casePrizeModalOk");
-
-// Значения приза только для визуального наполнения рулетки декоями —
-// реальный приз всегда приходит с сервера (см. /open_case в bot.py),
-// клиент его не выбирает и не может повлиять на результат.
-const CASE_REEL_VALUES = [5, 10, 15, 30, 50];
-const CASE_REEL_DECOYS_BEFORE = 28;
-const CASE_REEL_DECOYS_AFTER = 6;
-const CASE_SPIN_DURATION_MS = 3200;
-
-function setCaseStatus(text, type = "") {
-  caseStatus.textContent = text;
-  caseStatus.className = "case-status" + (type ? " " + type : "");
-}
-
-// Определяет визуальную "редкость" приза — чисто для оформления карточки
-function rarityKeyFor(discountPercent) {
-  if (discountPercent >= 50) return "legendary";
-  if (discountPercent >= 30) return "epic";
-  if (discountPercent >= 15) return "rare";
-  if (discountPercent >= 10) return "uncommon";
-  return "common";
-}
-
-function rarityClassFor(discountPercent) {
-  return "case-result-badge--" + rarityKeyFor(discountPercent);
-}
-
-function buildReelItem(value) {
-  const el = document.createElement("div");
-  el.className = "case-reel-item case-reel-item--" + rarityKeyFor(value);
-  el.textContent = `-${value}%`;
-  return el;
-}
-
-// Полностью сбрасывает экран кейса в исходное состояние — вызывается
-// каждый раз перед переходом на этот экран, чтобы предыдущий результат
-// не "мигал" на секунду, пока не откроется свежий кейс.
-function resetCaseStage() {
-  caseReelWrap.hidden = true;
-  caseReelTrack.innerHTML = "";
-  caseReelTrack.style.transition = "none";
-  caseReelTrack.style.transform = "translateX(0px)";
-  caseResult.hidden = true;
-  caseAgainBtn.hidden = true;
-  caseStage.classList.remove("case-stage--spinning", "case-stage--opened");
-  caseOpenBtn.hidden = false;
-  caseOpenBtn.disabled = false;
-  caseOpenBtn.textContent = "Открыть кейс";
-  setCaseStatus("");
-  hideCasePrizeModal();
-}
-
-// Показывает мини-меню с полученным промокодом поверх экрана кейса —
-// появляется сразу после того, как рулетка докрутилась до приза.
-function showCasePrizeModal(discountPercent, code) {
-  casePrizeModalBadge.textContent = `-${discountPercent}%`;
-  casePrizeModalBadge.className = "case-prize-modal-badge " + rarityClassFor(discountPercent);
-  casePrizeModalCode.textContent = code;
-  casePrizeModal.hidden = false;
-
-  // Форсируем перезапуск анимации появления при каждом открытии кейса —
-  // без этого при повторном открытии (второй, третий раз за сессию)
-  // анимация backdrop/карточки могла не запуститься заново в Telegram
-  // WebView (тот же приём, что и для .case-result чуть выше по коду).
-  [casePrizeModalBackdrop, casePrizeModal.querySelector(".case-prize-modal-card")].forEach((el) => {
-    if (!el) return;
-    el.style.animation = "none";
-    void el.offsetHeight;
-    el.style.animation = "";
-  });
-}
-
-function hideCasePrizeModal() {
-  casePrizeModal.hidden = true;
-}
-
-casePrizeModalOk.addEventListener("click", () => {
-  hideCasePrizeModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-casePrizeModalBackdrop.addEventListener("click", () => {
-  hideCasePrizeModal();
-});
-
-// Строит длинную ленту призов со случайными "декоями" и настоящим призом
-// (discountPercent) где-то в середине, затем плавно прокручивает её так,
-// чтобы приз точно остановился под указателем по центру — как в открытии
-// кейсов в играх. Итог целиком определяется сервером ДО начала прокрутки,
-// анимация лишь визуализирует уже известный результат.
-function spinReelTo(discountPercent) {
-  const items = [];
-  for (let i = 0; i < CASE_REEL_DECOYS_BEFORE; i++) {
-    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
-  }
-
-  // "Почти повезло": если реально выпал небольшой приз (5% или 10%),
-  // ставим крупный приз (30% или 50%) прямо ПЕРЕД финальной позицией —
-  // рулетка визуально проезжает мимо джекпота и останавливается чуть
-  // раньше, на настоящем (небольшом) призе. Сам результат при этом никак
-  // не меняется — это чисто визуальный штрих ленты, приз всегда решён
-  // сервером заранее.
-  if (discountPercent === 5 || discountPercent === 10) {
-    const nearValue = Math.random() < 0.5 ? 30 : 50;
-    items[items.length - 1] = nearValue;
-  }
-
-  const targetIndex = items.length;
-  items.push(discountPercent);
-  for (let i = 0; i < CASE_REEL_DECOYS_AFTER; i++) {
-    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
-  }
-
-  caseReelTrack.innerHTML = "";
-  caseReelTrack.style.transition = "none";
-  caseReelTrack.style.transform = "translateX(0px)";
-
-  items.forEach((value) => {
-    caseReelTrack.appendChild(buildReelItem(value));
-  });
-
-  // Reflow, чтобы браузер точно применил сброс transform перед тем, как
-  // мы запустим анимацию к новой позиции — иначе переход может "слипнуться"
-  // со сбросом и визуально не сыграть.
-  void caseReelTrack.offsetWidth;
-
-  const wrapWidth = caseReelWrap.clientWidth;
-  const targetEl = caseReelTrack.children[targetIndex];
-  const itemCenter = targetEl.offsetLeft + targetEl.offsetWidth / 2;
-  // Небольшой случайный сдвиг в пределах ширины плашки приза, чтобы
-  // рулетка не останавливалась каждый раз идеально по центру — так
-  // выглядит естественнее.
-  const jitter = (Math.random() - 0.5) * (targetEl.offsetWidth * 0.5);
-  const offset = itemCenter + jitter - wrapWidth / 2;
-
-  requestAnimationFrame(() => {
-    caseReelTrack.style.transition = `transform ${CASE_SPIN_DURATION_MS}ms cubic-bezier(0.1, 0.82, 0.13, 1)`;
-    caseReelTrack.style.transform = `translateX(${-offset}px)`;
-  });
-}
-
-async function openCase() {
-  caseOpenBtn.disabled = true;
-  caseOpenBtn.hidden = true;
-  caseResult.hidden = true;
-  caseAgainBtn.hidden = true;
-  setCaseStatus("");
-  caseStage.classList.add("case-stage--spinning");
-  caseReelWrap.hidden = false;
-
-  try {
-    const response = await fetch("/open_case", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-    if (!response.ok) throw new Error("Сервер не смог открыть кейс");
-    const data = await response.json();
-
-    spinReelTo(data.discount_percent);
-    tg?.HapticFeedback?.selectionChanged();
-
-    // Ждём, пока рулетка реально докрутится до приза, и только потом
-    // показываем карточку результата — иначе она появится раньше, чем
-    // прокрутка остановится, и будет выглядеть рассинхронизированно.
-    await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
-
-    caseResultBadge.textContent = `-${data.discount_percent}%`;
-    caseResultBadge.className = "case-result-badge " + rarityClassFor(data.discount_percent);
-    caseResultCode.textContent = data.code;
-
-    caseCopyBtn.textContent = "Скопировать";
-    caseCopyBtn.classList.remove("case-copy-btn--copied");
-
-    caseResult.hidden = false;
-    caseResult.style.animation = "none";
-    caseResult.offsetHeight; // reflow, чтобы анимация точно применилась заново
-    caseResult.style.animation = "";
-    caseAgainBtn.hidden = false;
-
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseStage.classList.add("case-stage--opened");
-
-    setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
-
-    // Мини-меню с промокодом поверх экрана — появляется сразу после того,
-    // как кнопка "Открыть кейс ещё раз" уже видна.
-    showCasePrizeModal(data.discount_percent, data.code);
-  } catch (err) {
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseOpenBtn.hidden = false;
-    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    caseOpenBtn.disabled = false;
-    caseOpenBtn.textContent = "Открыть кейс";
-  }
-}
-
-caseEntryCard.addEventListener("click", () => {
-  resetCaseStage();
-  switchView("case");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseBack.addEventListener("click", () => {
-  hideCasePrizeModal();
-  switchView("shop");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseOpenBtn.addEventListener("click", () => {
-  openCase();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseAgainBtn.addEventListener("click", () => {
-  resetCaseStage();
-  openCase();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseCopyBtn.addEventListener("click", async () => {
-  const code = caseResultCode.textContent;
-  try {
-    await navigator.clipboard.writeText(code);
-  } catch (err) {
-    // Clipboard API недоступен (например, нет HTTPS) — просто выделяем текст,
-    // чтобы пользователь мог скопировать вручную
-    const range = document.createRange();
-    range.selectNodeContents(caseResultCode);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-  caseCopyBtn.textContent = "Скопировано";
-  caseCopyBtn.classList.add("case-copy-btn--copied");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-
-// ====== Инициализация ======
-// Рендерим карточки и профиль только когда сплэш реально скрывается —
-// так плавное появление карточек видно пользователю, а не "съедается"
-// временем, пока крутится экран загрузки.
-let appInitialized = false;
-
-function initApp() {
-  if (appInitialized) return;
-  appInitialized = true;
-  renderProducts();
-  fillProfileFromTelegram();
-  // Экран "Магазин" изначально активен прямо в HTML (без вызова
-  // switchView), поэтому ему тоже нужно явно навесить класс анимации
-  // появления — иначе он останется без неё при самом первом запуске.
-  switchView("shop");
 }
