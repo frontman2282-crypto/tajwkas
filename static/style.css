@@ -66,6 +66,31 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* touch-action: manipulation на всех кликабельных элементах — без этого
+   мобильный браузер/WebView после каждого тапа ждёт ~300мс, не был ли это
+   первый тап двойного тапа для зума, и только потом отправляет click.
+   Именно это ощущается как "нажатия срабатывают не с первого раза":
+   палец фактически попадает в элемент, но событие click приходит с
+   задержкой или "съедается", если за эти ~300мс происходит следующее
+   касание (а при быстром взаимодействии с интерфейсом это обычное дело).
+   Указываем это широким списком интерактивных селекторов, а не на *,
+   чтобы не трогать touch-action скролл-контейнеров (.app и т.п.). */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+.card-row,
+.tab,
+.duration-option,
+.payment-toggle,
+.payment-option,
+.promo-list-item,
+.admin-list-item {
+  touch-action: manipulation;
+}
+
 html {
   height: 100%;
   background: var(--bg-black);
@@ -170,6 +195,18 @@ body.keyboard-open .tabbar {
   visibility: hidden;
   transform: scale(1.04);
   pointer-events: none;
+}
+
+/* Внутри сплэша крутятся 5 бесконечных (infinite) CSS-анимаций
+   (пульс, аура, спиннер, шиммер текста, точки). visibility: hidden
+   НЕ останавливает CSS-анимации — они продолжали бы бесконечно
+   выполняться в фоне на протяжении всей сессии в приложении (пересчёт
+   transform/filter каждый кадр), даже когда сплэш никто не видит, и
+   без всякой пользы грузили поток на слабых устройствах. Ставим
+   анимации на паузу сразу, как только сплэш скрыт. */
+.splash.splash--hidden,
+.splash.splash--hidden * {
+  animation-play-state: paused !important;
 }
 
 .splash-mark {
@@ -346,6 +383,13 @@ body.keyboard-open .tabbar {
   pointer-events: none;
   filter: blur(20px);
   z-index: 0;
+  /* Эти три пятна анимируются бесконечно всё время, пока открыто
+     приложение. will-change заранее переносит их в отдельный
+     compositor-слой, чтобы transform/opacity на каждом кадре
+     обсчитывался GPU, а не тянул за собой перерасчёт layout/paint
+     всей остальной страницы — на слабых Android-WebView в Telegram
+     это была одна из основных причин общего "подлагивания". */
+  will-change: transform, opacity;
 }
 
 .bg-glow--top {
@@ -422,10 +466,12 @@ body.keyboard-open .tabbar {
    в checkout ниже — та же проблема, тот же приём для её решения). */
 .view--active.view-anim-in {
   animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
 .view--checkout.view--active.view-anim-in {
   animation: view-in-push 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
 }
 
 @keyframes view-in {
