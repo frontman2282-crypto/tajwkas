@@ -97,6 +97,58 @@ body.keyboard-open .tabbar {
   display: none;
 }
 
+/* ============ ЭКРАН "ВЫ ЗАБАНЕНЫ" ============ */
+
+.banned-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 32px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(239, 68, 68, 0.14), transparent 60%),
+    linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 100%);
+}
+
+.banned-screen[hidden] {
+  display: none;
+}
+
+.banned-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35), 0 0 30px rgba(239, 68, 68, 0.25);
+}
+
+.banned-icon svg {
+  width: 34px;
+  height: 34px;
+}
+
+.banned-title {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.banned-text {
+  font-size: 14px;
+  color: var(--text-dim);
+  max-width: 280px;
+}
+
 /* ============ SPLASH ============ */
 
 .splash {
@@ -653,38 +705,6 @@ body.keyboard-open .tabbar {
   color: var(--silver-2);
 }
 
-/* Цена тарифа при применённом промокоде: старая цена — зачёркнута,
-   рядом — новая цена со скидкой. Работает для любой процентной скидки
-   (в т.ч. 5%), т.к. финальная цена всегда считается через getFinalPrice()
-   тем же способом (math.floor), что и на сервере. */
-.duration-option-price--discounted {
-  gap: 8px;
-}
-
-.duration-option-price-old {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-dim);
-  opacity: 0.75;
-  text-decoration: line-through;
-}
-
-.duration-option-price-new {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 14px;
-  font-weight: 800;
-  color: #4ade80;
-}
-
-.duration-option--selected .duration-option-price-new {
-  color: #4ade80;
-}
-
 .duration-option--selected .duration-option-radio {
   border-color: var(--silver-2);
   box-shadow: 0 0 12px rgba(141, 141, 149, 0.65);
@@ -827,13 +847,6 @@ body.keyboard-open .tabbar {
   color: var(--text-dim);
   opacity: 0.8;
   text-decoration: line-through;
-  margin-right: 6px;
-}
-
-.buy-btn-new-price {
-  font-size: 13px;
-  font-weight: 800;
-  color: #4ade80;
   margin-right: 8px;
 }
 
@@ -2216,6 +2229,16 @@ body.keyboard-open .tabbar {
   transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
 }
 
+/* Явно перекрываем свой же display:flex выше для [hidden] — без этого
+   правила вкладка "Админ" была бы видна ВСЕМ пользователям: браузер
+   применяет обычный display:none для [hidden] только на уровне
+   стандартного UA-стиля с низким приоритетом, а наше собственное правило
+   .tab{display:flex} через авторские стили эту UA-логику перебивает.
+   Именно это было причиной бага "админ-панель доступна для всех". */
+.tab[hidden] {
+  display: none;
+}
+
 .tab-icon {
   font-size: 15px;
   line-height: 1;
@@ -2237,6 +2260,143 @@ body.keyboard-open .tabbar {
 
 .tab--active .tab-label {
   font-weight: 700;
+}
+
+/* ============ АДМИН-ПАНЕЛЬ ============ */
+
+.admin-block {
+  margin-top: 22px;
+}
+
+.admin-block:first-of-type {
+  margin-top: 8px;
+}
+
+.admin-block .promo-row {
+  margin-top: 10px;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.admin-form-input {
+  flex: 1;
+  width: 100%;
+}
+
+/* .promo-input по умолчанию завязан на .promo-input-wrap (с иконкой) —
+   здесь переиспользуем те же визуальные стили (фон/бордер/паддинг) для
+   простых полей без иконки-обёртки. */
+input.admin-form-input.promo-input {
+  padding: 13px 14px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+input.admin-form-input.promo-input:focus {
+  border-color: var(--accent);
+}
+
+.admin-form-submit {
+  margin-top: 2px;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.admin-list-empty {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.admin-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.admin-list-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-list-item-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-list-item-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.admin-list-item-badge {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+}
+
+.admin-list-item-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.admin-list-item-remove svg {
+  width: 15px;
+  height: 15px;
+}
+
+.admin-list-item-remove:active {
+  transform: scale(0.92);
 }
 
 /* ============ RESPONSIVE ============ */
