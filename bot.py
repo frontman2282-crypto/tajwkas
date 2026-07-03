@@ -45,6 +45,7 @@
 import asyncio
 import json
 import logging
+import math
 import random
 import string
 
@@ -344,14 +345,21 @@ def apply_promo(base_price: int, promo_code: str | None) -> tuple[int, dict | No
     или сгенерированного кейсом).
 
     Возвращает (итоговая_цена, метаданные_промокода_или_None).
-    Цена в Stars — это целое число, поэтому скидка округляется,
-    а итоговая цена никогда не опускается ниже 1 звезды.
+    Цена в Stars — это целое число, поэтому скидка округляется вниз
+    (math.floor), а не до ближайшего целого: с обычным round() при
+    небольшой базовой цене (например, 2 ★) многие проценты скидки
+    (10%, 20%, 25%...) округлялись ОБРАТНО к исходной цене — промокод
+    формально считался применённым (скидка% в ответе была верной), но
+    реально оплатить нужно было ту же сумму, и выглядело так, будто
+    промокод "не работает". floor гарантирует, что любая ненулевая
+    скидка при base_price > 1 хоть немного, но снижает цену. Итоговая
+    цена никогда не опускается ниже 1 звезды.
     """
     discount_percent, promo_meta = resolve_promo(promo_code)
     if promo_meta is None:
         return base_price, None
 
-    final_price = max(1, round(base_price * (1 - discount_percent / 100)))
+    final_price = max(1, math.floor(base_price * (1 - discount_percent / 100)))
     promo_meta = {**promo_meta, "discount_percent": discount_percent}
     return final_price, promo_meta
 
