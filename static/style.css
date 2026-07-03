@@ -2229,6 +2229,16 @@ body.keyboard-open .tabbar {
   transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
 }
 
+/* Явно перекрываем свой же display:flex выше для [hidden] — без этого
+   правила вкладка "Админ" была бы видна ВСЕМ пользователям: браузер
+   применяет обычный display:none для [hidden] только на уровне
+   стандартного UA-стиля с низким приоритетом, а наше собственное правило
+   .tab{display:flex} через авторские стили эту UA-логику перебивает.
+   Именно это было причиной бага "админ-панель доступна для всех". */
+.tab[hidden] {
+  display: none;
+}
+
 .tab-icon {
   font-size: 15px;
   line-height: 1;
