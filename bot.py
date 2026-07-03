@@ -22,8 +22,11 @@
    - POST /admin/ban, /admin/unban, /admin/banned_list — управление
      банами (только для ADMIN_ID, см. константу ниже).
    - POST /admin/promo/create, /admin/promo/delete, /admin/promo/list —
-     управление многоразовыми промокодами из админ-панели (только для
-     ADMIN_ID).
+     управление многоразовыми промокодами из админ-панели (доступно
+     владельцу и назначенным админам).
+   - POST /admin/whoami — права текущего пользователя (is_admin/is_owner).
+   - POST /admin/admins/list, /admin/admins/add, /admin/admins/remove —
+     назначение и снятие админов (только для владельца, ADMIN_ID).
 
 Установка зависимостей (aiogram у тебя уже есть):
     pip install aiohttp aiohttp-cors
@@ -98,9 +101,9 @@ PRODUCTS = {
 # Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
 # именно они прилетают в payload инвойса и в successful_payment.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 2},
-    "30d": {"label": "30 дней", "price": 2},
-    "12m": {"label": "12 месяцев", "price": 2},
+    "7d": {"label": "7 дней", "price": 220},
+    "30d": {"label": "30 дней", "price": 750},
+    "12m": {"label": "12 месяцев", "price": 2820},
 }
 
 # ====== Промокоды ======
@@ -223,6 +226,51 @@ def _parse_ban_target(raw: str) -> tuple[int | None, str | None]:
     return None, target.lower() if target else None
 
 
+# ====== Дополнительные админы (назначаются владельцем из панели) ======
+# ADMIN_ID — единственный "владелец", он всегда админ и только он может
+# назначать/снимать остальных админов. Остальные админы из этого списка
+# получают доступ к вкладке "Админ-панель" (бан, промокоды), но не могут
+# сами управлять списком админов — это решает is_owner_init_data ниже.
+# Хранилище устроено так же, как BANNED_USERS: ключ — внутренний id
+# записи, значение — {"user_id": int|None, "username": str|None}.
+ADMINS_STORE_PATH = os.environ.get("ADMINS_STORE_PATH", "admins.json")
+
+
+def _load_admins() -> dict[str, dict]:
+    try:
+        with open(ADMINS_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_admins() -> None:
+    try:
+        with open(ADMINS_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(ADMINS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", ADMINS_STORE_PATH)
+
+
+ADMINS: dict[str, dict] = _load_admins()
+
+
+def _find_admin_entry(user_id: int | None, username: str | None) -> str | None:
+    """Ищет запись о назначенном админе по id или по username. Возвращает
+    ключ записи в ADMINS, либо None, если пользователь не назначен."""
+    uname = username.lower().lstrip("@") if username else None
+    for key, entry in ADMINS.items():
+        if user_id is not None and entry.get("user_id") == user_id:
+            return key
+        if uname and entry.get("username") == uname:
+            return key
+    return None
+
+
+def is_assigned_admin(user_id: int | None, username: str | None) -> bool:
+    return _find_admin_entry(user_id, username) is not None
+
+
 # ====== Промокоды, созданные админом ======
 # В отличие от GENERATED_PROMOS (одноразовые призы из кейса, привязанные к
 # конкретному пользователю), это многоразовые промокоды с произвольным
@@ -288,11 +336,23 @@ def resolve_user(init_data_raw: str | None) -> tuple[int | None, str | None]:
         return None, None
 
 
-def is_admin_init_data(init_data_raw: str | None) -> bool:
-    """Проверяет, что запрос реально пришёл от ADMIN_ID (по подписанному
-    initData, а не по тому, что написал клиент)."""
+def is_owner_init_data(init_data_raw: str | None) -> bool:
+    """Проверяет, что запрос реально пришёл от владельца (ADMIN_ID) — по
+    подписанному initData, а не по тому, что написал клиент. Только
+    владелец может назначать и снимать остальных админов."""
     user_id, _ = resolve_user(init_data_raw)
     return user_id == ADMIN_ID
+
+
+def is_admin_init_data(init_data_raw: str | None) -> bool:
+    """Проверяет, что запрос реально пришёл от админа — владельца
+    (ADMIN_ID) или пользователя, назначенного админом из панели. Право
+    проверяется по подписанному initData, а не по тому, что прислал
+    клиент."""
+    user_id, username = resolve_user(init_data_raw)
+    if user_id == ADMIN_ID:
+        return True
+    return is_assigned_admin(user_id, username)
 
 
 def roll_case_prize() -> int:
@@ -677,7 +737,10 @@ async def admin_ban_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "cannot ban admin"}, status=400)
 
     existing_key = _find_ban_entry(target_id, target_username)
-    key = existing_key or f"ban_{len(BANNED_USERS) + 1}_{random.randint(1000, 9999)}"
+    if existing_key:
+        return web.json_response({"error": "already banned"}, status=409)
+
+    key = f"ban_{len(BANNED_USERS) + 1}_{random.randint(1000, 9999)}"
     BANNED_USERS[key] = {"user_id": target_id, "username": target_username}
     _save_banned_users()
 
@@ -805,6 +868,96 @@ async def admin_promo_list_handler(request: web.Request) -> web.Response:
     return web.json_response({"promos": items})
 
 
+async def admin_whoami_handler(request: web.Request) -> web.Response:
+    """Отдаёт права текущего пользователя: is_admin (владелец или
+    назначенный админ — видит вкладку "Админ-панель") и is_owner (только
+    ADMIN_ID — видит блок управления админами)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id, username = resolve_user(body.get("init_data"))
+    is_owner = user_id == ADMIN_ID
+    is_admin = is_owner or is_assigned_admin(user_id, username)
+
+    return web.json_response({"is_admin": is_admin, "is_owner": is_owner})
+
+
+async def admin_admins_list_handler(request: web.Request) -> web.Response:
+    """Отдаёт список назначенных админов. Доступно только владельцу."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_owner_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    items = [{"key": key, **entry} for key, entry in ADMINS.items()]
+    items.reverse()
+    return web.json_response({"admins": items})
+
+
+async def admin_admins_add_handler(request: web.Request) -> web.Response:
+    """Назначает пользователя админом по username или id. Доступно только
+    владельцу (ADMIN_ID)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_owner_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_target = str(body.get("target", "")).strip()
+    if not raw_target:
+        return web.json_response({"error": "empty target"}, status=400)
+
+    target_id, target_username = _parse_ban_target(raw_target)
+    if target_id is None and not target_username:
+        return web.json_response({"error": "bad target"}, status=400)
+
+    # Владелец и так всегда админ — не даём добавить его же в список ещё раз.
+    if target_id == ADMIN_ID or (target_username and target_username == ADMIN_USERNAME.lower()):
+        return web.json_response({"error": "already owner"}, status=400)
+
+    existing_key = _find_admin_entry(target_id, target_username)
+    if existing_key:
+        return web.json_response({"error": "already admin"}, status=409)
+
+    key = f"adm_{len(ADMINS) + 1}_{random.randint(1000, 9999)}"
+    ADMINS[key] = {"user_id": target_id, "username": target_username}
+    _save_admins()
+
+    return web.json_response({"admin": ADMINS[key]})
+
+
+async def admin_admins_remove_handler(request: web.Request) -> web.Response:
+    """Снимает права админа. Принимает либо ключ записи ("key"), либо
+    target (username/id). Доступно только владельцу (ADMIN_ID)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_owner_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    key = body.get("key")
+    if not key:
+        raw_target = str(body.get("target", "")).strip()
+        target_id, target_username = _parse_ban_target(raw_target)
+        key = _find_admin_entry(target_id, target_username)
+
+    if key and key in ADMINS:
+        del ADMINS[key]
+        _save_admins()
+        return web.json_response({"removed": key})
+
+    return web.json_response({"error": "not found"}, status=404)
+
+
 async def avatar_handler(request: web.Request) -> web.Response:
     """Отдаёт аватар пользователя картинкой.
 
@@ -877,6 +1030,10 @@ def build_web_app() -> web.Application:
     app.router.add_post("/admin/promo/create", admin_promo_create_handler)
     app.router.add_post("/admin/promo/delete", admin_promo_delete_handler)
     app.router.add_post("/admin/promo/list", admin_promo_list_handler)
+    app.router.add_post("/admin/whoami", admin_whoami_handler)
+    app.router.add_post("/admin/admins/list", admin_admins_list_handler)
+    app.router.add_post("/admin/admins/add", admin_admins_add_handler)
+    app.router.add_post("/admin/admins/remove", admin_admins_remove_handler)
     app.router.add_get("/avatar", avatar_handler)
     app.router.add_get("/", index_handler)
     # Раздаём фронтенд (style.css, script.js) с того же домена.
