@@ -18,9 +18,9 @@ const PRODUCTS = [
 // Цены указаны в звёздах (Telegram Stars) — поменяй значения price
 // на свои под каждый тариф.
 const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 2 },
-  { code: "30d", label: "30 дней", price: 2 },
-  { code: "12m", label: "12 месяцев", price: 2 },
+  { code: "7d", label: "7 дней", price: 220 },
+  { code: "30d", label: "30 дней", price: 750 },
+  { code: "12m", label: "12 месяцев", price: 2820 },
 ];
 
 // Цены в рублях при оплате способом "RU карта" — оформляется вручную
@@ -90,12 +90,12 @@ if (tg) {
   });
 }
 
-// ====== Проверка бана ======
-// Единственный пользователь с правами админа в мини-аппе — используется,
-// чтобы показать вкладку "Админ" в таббаре и открыть /view-admin. Реальная
-// проверка прав на любое админ-действие всё равно происходит на сервере
-// по подписанному initData — этот id тут только чтобы не показывать
-// вкладку случайным людям.
+// ====== Владелец ======
+// id владельца — держим тут только для справки/комментариев. Видимость
+// вкладки "Админ" и всех прав больше НЕ проверяется по этой константе на
+// клиенте: теперь она полностью решается сервером через /admin/whoami (по
+// подписанному initData), т.к. владелец может назначать других админов с
+// произвольными id — см. checkAdminAccess() ниже.
 const ADMIN_ID = 8606714114;
 
 // Запускаем проверку бана СРАЗУ, не дожидаясь окончания сплэша — так к
@@ -196,15 +196,21 @@ function getFinalPrice(basePrice, discountPercent) {
 function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
   const finalPrice = getFinalPrice(duration.price, checkoutDiscountPercent);
+  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < duration.price;
 
-  if (checkoutDiscountPercent > 0 && finalPrice < duration.price) {
-    checkoutOldPrice.textContent = `${duration.price} ★`;
+  // Зачёркнутая исходная цена показывается прямо на кнопке "Купить" рядом
+  // с новой ценой со скидкой — работает для любого процента скидки
+  // (в т.ч. 5%), т.к. итоговая цена всегда считается на сервере (floor).
+  if (hasDiscount) {
+    checkoutOldPrice.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
     checkoutOldPrice.hidden = false;
   } else {
     checkoutOldPrice.hidden = true;
   }
 
-  buyBtnText.textContent = "Нажмите для оплаты Telegram Stars";
+  buyBtnText.innerHTML = hasDiscount
+    ? `Купить за ${finalPrice} ${STAR_ICON_SVG}`
+    : `Купить за ${duration.price} ${STAR_ICON_SVG}`;
 }
 
 // Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
@@ -776,6 +782,7 @@ tabs.forEach((tab) => {
     if (tab.dataset.view === "admin") {
       loadBannedList();
       loadAdminPromos();
+      if (isOwnerUser) loadAdminsList();
     }
   });
 });
@@ -851,12 +858,11 @@ function showAvatarFallback(letterOrIcon) {
 function fillProfileFromTelegram() {
   const user = tg?.initDataUnsafe?.user;
 
-  // Вкладка "Админ" видна только владельцу (проверка тут — просто чтобы
-  // не показывать её случайным людям в интерфейсе; реальные права на
-  // любое действие всё равно перепроверяются на сервере по initData).
-  if (user && user.id === ADMIN_ID) {
-    adminTabBtn.hidden = false;
-  }
+  // Вкладка "Админ" видна владельцу и всем назначенным им админам.
+  // Проверка тут — просто чтобы не показывать её случайным людям в
+  // интерфейсе; реальные права на любое действие всё равно
+  // перепроверяются на сервере по подписанному initData.
+  checkAdminAccess();
 
   if (!user) {
     profileName.textContent = "Гость";
@@ -1437,6 +1443,13 @@ caseCopyBtn.addEventListener("click", async () => {
 // поэтому даже если кто-то откроет вкладку в обход (например, вручную
 // вызвав switchView в консоли), никакое действие всё равно не пройдёт.
 
+const adminManageBlock = document.getElementById("adminManageBlock");
+const adminAddInput = document.getElementById("adminAddInput");
+const adminAddBtn = document.getElementById("adminAddBtn");
+const adminAddStatus = document.getElementById("adminAddStatus");
+const adminAdminsList = document.getElementById("adminAdminsList");
+const adminAdminsEmpty = document.getElementById("adminAdminsEmpty");
+
 const adminBanInput = document.getElementById("adminBanInput");
 const adminBanBtn = document.getElementById("adminBanBtn");
 const adminBanStatus = document.getElementById("adminBanStatus");
@@ -1471,6 +1484,108 @@ async function adminPost(url, payload) {
   }
   return data;
 }
+
+// --- Доступ к админ-панели ---
+
+// true, если текущий пользователь — владелец (ADMIN_ID). Только владелец
+// видит и может пользоваться блоком "Назначить админа" ниже. Обычные
+// назначенные админы видят остальную панель (бан, промокоды), но не
+// управление списком админов — это решает сервер по initData.
+let isOwnerUser = false;
+
+async function checkAdminAccess() {
+  try {
+    const data = await adminPost("/admin/whoami", {});
+    adminTabBtn.hidden = !data.is_admin;
+    isOwnerUser = !!data.is_owner;
+    adminManageBlock.hidden = !isOwnerUser;
+    if (isOwnerUser) loadAdminsList();
+  } catch (err) {
+    // Открыто не из Telegram или initData ещё не готова — просто не
+    // показываем вкладку "Админ".
+    adminTabBtn.hidden = true;
+  }
+}
+
+// --- Назначение/снятие админов (только владелец) ---
+
+async function loadAdminsList() {
+  try {
+    const data = await adminPost("/admin/admins/list", {});
+    renderAdminsList(data.admins || []);
+  } catch (err) {
+    // см. комментарий в loadBannedList
+  }
+}
+
+function renderAdminsList(items) {
+  adminAdminsList.innerHTML = "";
+  adminAdminsEmpty.hidden = items.length > 0;
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "admin-list-item";
+
+    const info = document.createElement("div");
+    info.className = "admin-list-item-info";
+
+    const title = document.createElement("div");
+    title.className = "admin-list-item-title";
+    title.textContent = item.username ? "@" + item.username : `id ${item.user_id}`;
+
+    const sub = document.createElement("div");
+    sub.className = "admin-list-item-sub";
+    sub.textContent = item.user_id && item.username ? `id ${item.user_id}` : "админ";
+
+    info.appendChild(title);
+    info.appendChild(sub);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "admin-list-item-remove";
+    removeBtn.innerHTML = REMOVE_ICON_SVG;
+    removeBtn.addEventListener("click", () => removeAdmin(item.key));
+
+    row.appendChild(info);
+    row.appendChild(removeBtn);
+    adminAdminsList.appendChild(row);
+  });
+}
+
+async function removeAdmin(key) {
+  try {
+    await adminPost("/admin/admins/remove", { key });
+    tg?.HapticFeedback?.selectionChanged();
+    loadAdminsList();
+  } catch (err) {
+    setAdminStatus(adminAddStatus, "Не удалось снять админа, попробуй ещё раз", "error");
+  }
+}
+
+adminAddBtn.addEventListener("click", async () => {
+  const target = adminAddInput.value.trim();
+  if (!target) {
+    setAdminStatus(adminAddStatus, "Введи username или id", "error");
+    return;
+  }
+
+  adminAddBtn.disabled = true;
+  try {
+    await adminPost("/admin/admins/add", { target });
+    adminAddInput.value = "";
+    setAdminStatus(adminAddStatus, "Админ назначен", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    loadAdminsList();
+  } catch (err) {
+    let message = "Не удалось назначить: " + err.message;
+    if (err.message === "already admin") message = "Этот пользователь уже назначен админом";
+    if (err.message === "already owner") message = "Это и так владелец";
+    setAdminStatus(adminAddStatus, message, "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    adminAddBtn.disabled = false;
+  }
+});
 
 // --- Бан пользователей ---
 
@@ -1543,7 +1658,10 @@ adminBanBtn.addEventListener("click", async () => {
     tg?.HapticFeedback?.notificationOccurred("success");
     loadBannedList();
   } catch (err) {
-    setAdminStatus(adminBanStatus, "Не удалось забанить: " + err.message, "error");
+    const message = err.message === "already banned"
+      ? "Этот пользователь уже забанен"
+      : "Не удалось забанить: " + err.message;
+    setAdminStatus(adminBanStatus, message, "error");
     tg?.HapticFeedback?.notificationOccurred("error");
   } finally {
     adminBanBtn.disabled = false;
