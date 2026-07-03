@@ -8,9 +8,14 @@
 2. Поднимает рядом aiohttp веб-сервер с маршрутами:
    - POST /create_invoice — дёргает script.js, чтобы получить ссылку
      на инвойс и открыть нативное окно оплаты через tg.openInvoice().
-   - POST /open_case — выдаёт бесплатный одноразовый промокод
-     (Kichiro-XXXXX) со случайной скидкой (5/10/15/30/50%, вес
-     выпадения 110:70:25:3:1).
+   - POST /create_case_invoice — создаёт инвойс на CASE_PRICE_STARS
+     звёзд (кейс теперь платный) для открытия кейса.
+   - POST /claim_case_reward — забирает приз кейса (одноразовый
+     промокод Kichiro-XXXXX со случайной скидкой: 3/5/10/15/30/50%)
+     после того, как оплата инвойса из /create_case_invoice
+     подтвердилась.
+   - POST /open_case — старая ручка бесплатного открытия кейса,
+     работает только если CASE_IS_FREE снова включат вручную.
    - GET  /validate_promo?code=... — проверяет промокод (статический
      или кейсовый) на экране оформления, до создания инвойса.
    - POST /delete_promo_codes — удаляет выбранные кейсовые промокоды
@@ -26,7 +31,8 @@
      владельцу и назначенным админам).
    - POST /admin/whoami — права текущего пользователя (is_admin/is_owner).
    - POST /admin/admins/list, /admin/admins/add, /admin/admins/remove —
-     назначение и снятие админов (только для владельца, ADMIN_ID).
+     назначение и снятие админов (только для владельцев — ADMIN_ID и
+     SECOND_OWNER_ID, см. OWNER_IDS/OWNER_USERNAMES).
 
 Установка зависимостей (aiogram у тебя уже есть):
     pip install aiohttp aiohttp-cors
@@ -83,6 +89,17 @@ PORT = int(os.environ.get("PORT", 8080))  # Render подставит свой P
 ADMIN_ID = 8606714114
 ADMIN_USERNAME = "meaninglessperson"  # только для справки/отображения
 
+# Второй владелец — имеет ровно те же права, что и ADMIN_ID: доступ к
+# админ-панели, бан/промокоды, а также (в отличие от обычных назначенных
+# админов) право сам назначать и снимать других админов. Проверка прав
+# везде идёт по множеству OWNER_IDS/OWNER_USERNAMES, а не по одному ID —
+# см. is_owner_init_data ниже.
+SECOND_OWNER_ID = 6862094308
+SECOND_OWNER_USERNAME = "alyuplost"
+
+OWNER_IDS = {ADMIN_ID, SECOND_OWNER_ID}
+OWNER_USERNAMES = {ADMIN_USERNAME.lower(), SECOND_OWNER_USERNAME.lower()}
+
 # Каталог товаров: id -> (название, описание, цена в звёздах)
 PRODUCTS = {
     "dystopia": {
@@ -117,25 +134,27 @@ PROMO_CODES = {
 # ====== Промокоды из кейса ======
 # Кейс выдаёт одноразовый промокод формата "Kichiro-XXXXX" (5 случайных
 # букв, в любом регистре, без цифр). Шансы ниже — это ОТНОСИТЕЛЬНЫЕ веса
-# выпадения, а не проценты от 100. При сумме весов 259 фактические шансы:
-# 5% = 57.9%, 10% = 38.6%, 15% = 1.9%, 30% = 1.2%, 50% = 0.4%.
-# Шансы на 15% и 50% дополнительно понижены (было 7.0% и 0.5%
-# соответственно) — вес 15% уменьшен почти в 3 раза, а веса частых призов
-# (5% и 10%) увеличены, чтобы общая сумма выросла и редкие призы стали
-# выпадать ещё реже. Выбор по-прежнему полностью случайный
+# выпадения, а не проценты от 100. При сумме весов 379 фактические шансы:
+# 3% = 42.2%, 5% = 39.6%, 10% = 15.8%, 15% = 1.3%, 30% = 0.8%, 50% = 0.3%.
+# Добавлена новая (самая частая) ступень скидки 3%, а шанс на 10% заметно
+# понижен (было 100 из 259 = 38.6%, стало 60 из 379 = 15.8%) — вес 10%
+# уменьшен, а появление нового частого приза 3% ещё больше "разбавляет"
+# долю остальных призов. Выбор по-прежнему полностью случайный
 # (random.choices) — поменяй числа, если нужны другие шансы.
 CASE_PRIZES = [
+    (3, 160),
     (5, 150),
-    (10, 100),
+    (10, 60),
     (15, 5),
     (30, 3),
     (50, 1),
 ]
 
-# Пока кейс бесплатный — открыть его можно сколько угодно раз без оплаты.
-# Когда понадобится сделать его платным, тут же можно списывать звёзды
-# перед вызовом roll_case_prize() в open_case_handler.
-CASE_IS_FREE = True
+# Кейс платный: открыть его можно за CASE_PRICE_STARS звёзд Telegram
+# Stars (оплата — обычный инвойс, как и при покупке товара, см.
+# create_case_invoice_handler и successful_payment_handler).
+CASE_IS_FREE = False
+CASE_PRICE_STARS = 60
 
 # Хранилище сгенерированных кейсом промокодов: КОД (в верхнем регистре) ->
 # {"code": оригинальное написание, "discount_percent": int, "used": bool}.
@@ -169,6 +188,37 @@ def _save_generated_promos() -> None:
 
 
 GENERATED_PROMOS: dict[str, dict] = _load_generated_promos()
+
+
+# ====== Ожидающие выдачи призы кейса (после оплаты звёздами) ======
+# Открытие кейса теперь платное (см. CASE_PRICE_STARS), поэтому оно, как и
+# покупка товара, идёт через create_invoice_link + successful_payment —
+# сам приз "крутится" не сразу по клику, а только когда пришло реальное
+# подтверждение оплаты (successful_payment_handler). Приз кладётся сюда,
+# а мини-апп забирает его через POST /claim_case_reward (опрашивает эту
+# ручку короткими интервалами сразу после того, как Telegram сообщил
+# статус "paid").
+# Ключ — user_id, значение — {"code": ..., "discount_percent": int}.
+PENDING_CASE_STORE_PATH = os.environ.get("PENDING_CASE_STORE_PATH", "pending_case_rewards.json")
+
+
+def _load_pending_case_rewards() -> dict[str, dict]:
+    try:
+        with open(PENDING_CASE_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_pending_case_rewards() -> None:
+    try:
+        with open(PENDING_CASE_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(PENDING_CASE_REWARDS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", PENDING_CASE_STORE_PATH)
+
+
+PENDING_CASE_REWARDS: dict[str, dict] = _load_pending_case_rewards()
 
 
 # ====== Забаненные пользователи (админ-панель) ======
@@ -215,6 +265,30 @@ def _find_ban_entry(user_id: int | None, username: str | None) -> str | None:
 
 def is_banned(user_id: int | None, username: str | None) -> bool:
     return _find_ban_entry(user_id, username) is not None
+
+
+def is_banned_and_backfill(user_id: int | None, username: str | None) -> bool:
+    """То же, что is_banned, но дополнительно "фиксирует" числовой id
+    пользователя в записи о бане, если её там раньше не было.
+
+    Раньше бан, выданный по username (например, на пользователя, который
+    ни разу не открывал бота), переставал действовать, если человек потом
+    менял username — запись просто переставала совпадать ни по чему.
+    Теперь при каждом заходе в бота/мини-апп мы смотрим подписанный
+    initData и, если он совпал с существующей записью о бане, тут же
+    дописываем в неё user_id (он не меняется никогда, в отличие от
+    username) — начиная с этого момента бан работает даже после смены
+    username."""
+    key = _find_ban_entry(user_id, username)
+    if key is None:
+        return False
+
+    entry = BANNED_USERS[key]
+    if user_id is not None and entry.get("user_id") != user_id:
+        entry["user_id"] = user_id
+        _save_banned_users()
+
+    return True
 
 
 def _parse_ban_target(raw: str) -> tuple[int | None, str | None]:
@@ -336,21 +410,31 @@ def resolve_user(init_data_raw: str | None) -> tuple[int | None, str | None]:
         return None, None
 
 
+def is_owner_user(user_id: int | None, username: str | None) -> bool:
+    """Проверяет, является ли пользователь одним из владельцев
+    (ADMIN_ID или SECOND_OWNER_ID) — по id или по username."""
+    if user_id is not None and user_id in OWNER_IDS:
+        return True
+    if username and username.lower() in OWNER_USERNAMES:
+        return True
+    return False
+
+
 def is_owner_init_data(init_data_raw: str | None) -> bool:
-    """Проверяет, что запрос реально пришёл от владельца (ADMIN_ID) — по
+    """Проверяет, что запрос реально пришёл от одного из владельцев — по
     подписанному initData, а не по тому, что написал клиент. Только
-    владелец может назначать и снимать остальных админов."""
-    user_id, _ = resolve_user(init_data_raw)
-    return user_id == ADMIN_ID
+    владельцы могут назначать и снимать остальных админов."""
+    user_id, username = resolve_user(init_data_raw)
+    return is_owner_user(user_id, username)
 
 
 def is_admin_init_data(init_data_raw: str | None) -> bool:
-    """Проверяет, что запрос реально пришёл от админа — владельца
-    (ADMIN_ID) или пользователя, назначенного админом из панели. Право
+    """Проверяет, что запрос реально пришёл от админа — одного из
+    владельцев или пользователя, назначенного админом из панели. Право
     проверяется по подписанному initData, а не по тому, что прислал
     клиент."""
     user_id, username = resolve_user(init_data_raw)
-    if user_id == ADMIN_ID:
+    if is_owner_user(user_id, username):
         return True
     return is_assigned_admin(user_id, username)
 
@@ -433,7 +517,7 @@ dp = Dispatcher()
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     username = message.from_user.username.lower() if message.from_user.username else None
-    if is_banned(message.from_user.id, username):
+    if is_banned_and_backfill(message.from_user.id, username):
         await message.answer("🚫 Вы забанены и не можете пользоваться ботом.")
         return
 
@@ -469,6 +553,37 @@ async def successful_payment_handler(message: Message):
     product_id = parts[0] if len(parts) > 0 else ""
     duration_code = parts[1] if len(parts) > 1 else ""
     promo_field = parts[2] if len(parts) > 2 else ""
+
+    # Открытие платного кейса — отдельная ветка: тут не выдаётся доступ к
+    # товару на срок, а "крутится" приз (см. roll_case_prize) и кладётся в
+    # PENDING_CASE_REWARDS, откуда его тут же заберёт мини-апп через
+    # POST /claim_case_reward.
+    if product_id == "case_open":
+        discount_percent = roll_case_prize()
+        code = generate_case_code()
+        user_id = message.from_user.id
+        GENERATED_PROMOS[code.upper()] = {
+            "code": code,
+            "discount_percent": discount_percent,
+            "used": False,
+            "user_id": user_id,
+        }
+        _save_generated_promos()
+
+        PENDING_CASE_REWARDS[str(user_id)] = {
+            "code": code,
+            "discount_percent": discount_percent,
+        }
+        _save_pending_case_rewards()
+
+        await message.answer(
+            f"Оплата получена: {payment.total_amount} ★\n"
+            f"Кейс открыт — выпал промокод «{code}» на скидку {discount_percent}%.\n"
+            f"Он уже должен появиться в мини-аппе, а также сохранён в "
+            f"«Профиль → Мои промокоды»."
+        )
+        return
+
     duration_label = DURATIONS.get(duration_code, {}).get("label", "")
 
     # promo_field теперь в формате "тип:ключ" (например "case:KICHIRO-A1B2C"
@@ -508,7 +623,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     # обошёл проверку /check_ban на фронтенде, инвойс всё равно не
     # создастся.
     ban_user_id, ban_username = resolve_user(data.get("init_data"))
-    if is_banned(ban_user_id, ban_username):
+    if is_banned_and_backfill(ban_user_id, ban_username):
         return web.json_response({"error": "banned"}, status=403)
 
     product = PRODUCTS.get(product_id)
@@ -565,26 +680,22 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
 
 
 async def open_case_handler(request: web.Request) -> web.Response:
-    """Открывает бесплатный кейс и выдаёт одноразовый промокод.
+    """Старая ручка бесплатного открытия кейса — оставлена только на
+    случай, если CASE_IS_FREE снова включат вручную. Пока кейс платный
+    (CASE_IS_FREE = False), фронтенд должен использовать
+    POST /create_case_invoice + POST /claim_case_reward."""
+    if not CASE_IS_FREE:
+        return web.json_response(
+            {"error": "case is not free, use /create_case_invoice"}, status=400
+        )
 
-    Шансы выпадения скидок заданы весами в CASE_PRIZES (5%/10%/15%/30%/50%
-    в пропорции 105:75:14:5:1, т.е. 52.5%/37.5%/7%/2.5%/0.5%). Код
-    одноразовый и живёт, пока не будет использован при успешной оплате
-    (см. successful_payment_handler).
-    """
     try:
         body = await request.json()
     except Exception:
         body = {}
 
-    # Привязываем сгенерированный код к конкретному пользователю Telegram
-    # (если initData передан и валиден) — это и позволяет потом показать
-    # человеку список именно ЕГО неиспользованных кодов в "Моих промокодах".
     user_id = resolve_user_id(body.get("init_data"))
 
-    # Пока CASE_IS_FREE — открытие кейса ничего не стоит. Когда кейс
-    # станет платным, здесь нужно будет списать звёзды/проверить оплату
-    # перед тем, как выдавать промокод.
     discount_percent = roll_case_prize()
     code = generate_case_code()
     GENERATED_PROMOS[code.upper()] = {
@@ -599,6 +710,63 @@ async def open_case_handler(request: web.Request) -> web.Response:
         "code": code,
         "discount_percent": discount_percent,
         "is_free": CASE_IS_FREE,
+    })
+
+
+async def create_case_invoice_handler(request: web.Request) -> web.Response:
+    """Создаёт инвойс на CASE_PRICE_STARS звёзд для открытия кейса.
+
+    Сам приз не выбирается здесь — он "крутится" только в момент
+    подтверждённой оплаты, в successful_payment_handler (payload
+    "case_open::"), и кладётся в PENDING_CASE_REWARDS."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+
+    ban_user_id, ban_username = resolve_user(data.get("init_data"))
+    if is_banned_and_backfill(ban_user_id, ban_username):
+        return web.json_response({"error": "banned"}, status=403)
+
+    invoice_link = await bot.create_invoice_link(
+        title="Кейс с промокодом",
+        description=f"Открытие кейса — случайный промокод на скидку от 3% до 50%.",
+        payload="case_open::",
+        provider_token="",
+        currency="XTR",
+        prices=[LabeledPrice(label="Открытие кейса", amount=CASE_PRICE_STARS)],
+    )
+
+    return web.json_response({
+        "invoice_link": invoice_link,
+        "price": CASE_PRICE_STARS,
+    })
+
+
+async def claim_case_reward_handler(request: web.Request) -> web.Response:
+    """Забирает приз кейса, если оплата уже прошла и successful_payment_handler
+    успел его "прокрутить". Фронтенд опрашивает эту ручку короткими
+    интервалами сразу после того, как tg.openInvoice сообщил статус
+    "paid". Приз отдаётся один раз — как только он забран, запись
+    удаляется."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id = resolve_user_id(body.get("init_data"))
+    if user_id is None:
+        return web.json_response({"ready": False})
+
+    reward = PENDING_CASE_REWARDS.pop(str(user_id), None)
+    if reward is None:
+        return web.json_response({"ready": False})
+
+    _save_pending_case_rewards()
+    return web.json_response({
+        "ready": True,
+        "code": reward["code"],
+        "discount_percent": reward["discount_percent"],
     })
 
 
@@ -709,7 +877,7 @@ async def check_ban_handler(request: web.Request) -> web.Response:
         body = {}
 
     user_id, username = resolve_user(body.get("init_data"))
-    return web.json_response({"banned": is_banned(user_id, username)})
+    return web.json_response({"banned": is_banned_and_backfill(user_id, username)})
 
 
 async def admin_ban_handler(request: web.Request) -> web.Response:
@@ -732,8 +900,8 @@ async def admin_ban_handler(request: web.Request) -> web.Response:
     if target_id is None and not target_username:
         return web.json_response({"error": "bad target"}, status=400)
 
-    # Не даём админу случайно забанить самого себя.
-    if target_id == ADMIN_ID or (target_username and target_username == ADMIN_USERNAME.lower()):
+    # Не даём забанить кого-то из владельцев.
+    if is_owner_user(target_id, target_username):
         return web.json_response({"error": "cannot ban admin"}, status=400)
 
     existing_key = _find_ban_entry(target_id, target_username)
@@ -878,7 +1046,7 @@ async def admin_whoami_handler(request: web.Request) -> web.Response:
         body = {}
 
     user_id, username = resolve_user(body.get("init_data"))
-    is_owner = user_id == ADMIN_ID
+    is_owner = is_owner_user(user_id, username)
     is_admin = is_owner or is_assigned_admin(user_id, username)
 
     return web.json_response({"is_admin": is_admin, "is_owner": is_owner})
@@ -918,8 +1086,9 @@ async def admin_admins_add_handler(request: web.Request) -> web.Response:
     if target_id is None and not target_username:
         return web.json_response({"error": "bad target"}, status=400)
 
-    # Владелец и так всегда админ — не даём добавить его же в список ещё раз.
-    if target_id == ADMIN_ID or (target_username and target_username == ADMIN_USERNAME.lower()):
+    # Владельцы и так всегда админы — не даём добавить кого-то из них в
+    # список ещё раз.
+    if is_owner_user(target_id, target_username):
         return web.json_response({"error": "already owner"}, status=400)
 
     existing_key = _find_admin_entry(target_id, target_username)
@@ -1019,6 +1188,8 @@ def build_web_app() -> web.Application:
     app = web.Application(middlewares=[no_cache_static_middleware])
     app.router.add_post("/create_invoice", create_invoice_handler)
     app.router.add_post("/open_case", open_case_handler)
+    app.router.add_post("/create_case_invoice", create_case_invoice_handler)
+    app.router.add_post("/claim_case_reward", claim_case_reward_handler)
     app.router.add_post("/my_promo_codes", my_promo_codes_handler)
     app.router.add_post("/delete_promo_codes", delete_promo_codes_handler)
     app.router.add_post("/delete_all_promo_codes", delete_all_promo_codes_handler)
