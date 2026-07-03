@@ -190,7 +190,9 @@ function renderProducts() {
 
 function getFinalPrice(basePrice, discountPercent) {
   if (!discountPercent) return basePrice;
-  return Math.max(1, Math.round(basePrice * (1 - discountPercent / 100)));
+  // floor, а не round — так же, как считает сервер (apply_promo в bot.py),
+  // чтобы цена на экране всегда совпадала с той, что реально спишется.
+  return Math.max(1, Math.floor(basePrice * (1 - discountPercent / 100)));
 }
 
 function updateBuyButtonLabel(buyBtnText, product, durationCode) {
@@ -214,22 +216,43 @@ function updateBuyButtonLabel(buyBtnText, product, durationCode) {
 }
 
 // Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
-// способа оплаты: звёзды показывают обычную цену, NFT — предложение
-// узнать цену у владельца (оформляется вручную), RU карта — цену в
-// рублях из RU_CARD_PRICES.
+// способа оплаты: звёзды и RU карта показывают цену с учётом промокода
+// (зачёркнутая исходная цена + цена со скидкой, если промокод применён),
+// NFT — предложение узнать цену у владельца (оформляется вручную, у него
+// нет фиксированной цены, поэтому скидку тут не считаем).
 function applyDurationPrice(priceEl, duration) {
   if (!priceEl) return;
 
   if (checkoutPaymentMethod === "nft") {
     priceEl.classList.add("duration-option-price--note");
+    priceEl.classList.remove("duration-option-price--discounted");
     priceEl.textContent = "Узнайте цену у владельца";
-  } else if (checkoutPaymentMethod === "card") {
-    priceEl.classList.remove("duration-option-price--note");
-    const rubPrice = RU_CARD_PRICES[duration.code];
-    priceEl.innerHTML = rubPrice != null ? `${rubPrice} ₽` : "—";
+    return;
+  }
+
+  priceEl.classList.remove("duration-option-price--note");
+
+  const isCard = checkoutPaymentMethod === "card";
+  const basePrice = isCard ? RU_CARD_PRICES[duration.code] : duration.price;
+
+  if (basePrice == null) {
+    priceEl.classList.remove("duration-option-price--discounted");
+    priceEl.innerHTML = "—";
+    return;
+  }
+
+  const unit = isCard ? "₽" : STAR_ICON_SVG;
+  const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
+  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
+
+  if (hasDiscount) {
+    priceEl.classList.add("duration-option-price--discounted");
+    priceEl.innerHTML =
+      `<span class="duration-option-price-old">${basePrice} ${unit}</span>` +
+      `<span class="duration-option-price-new">${finalPrice} ${unit}</span>`;
   } else {
-    priceEl.classList.remove("duration-option-price--note");
-    priceEl.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
+    priceEl.classList.remove("duration-option-price--discounted");
+    priceEl.innerHTML = `${basePrice} ${unit}`;
   }
 }
 
@@ -315,7 +338,7 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
 
     tg.openInvoice(invoiceLink, (status) => {
       buyBtn.disabled = false;
-      updateBuyButtonLabel(buyBtnText, product, durationCode);
+      refreshAllPrices();
 
       if (status === "paid") {
         setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
@@ -330,7 +353,7 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
     });
   } catch (err) {
     buyBtn.disabled = false;
-    updateBuyButtonLabel(buyBtnText, product, durationCode);
+    refreshAllPrices();
     setCardStatus(statusEl, err.message || "Ошибка при создании оплаты", "error");
   }
 }
@@ -359,6 +382,8 @@ const paymentToggleIcon = document.getElementById("paymentToggleIcon");
 const paymentToggleLabel = document.getElementById("paymentToggleLabel");
 const paymentOptions = document.getElementById("paymentOptions");
 const checkoutManualBtn = document.getElementById("checkoutManualBtn");
+const checkoutManualOldPrice = document.getElementById("checkoutManualOldPrice");
+const checkoutManualText = document.getElementById("checkoutManualText");
 const nftModal = document.getElementById("nftModal");
 const nftModalBackdrop = document.getElementById("nftModalBackdrop");
 const nftModalTitle = document.getElementById("nftModalTitle");
@@ -430,13 +455,58 @@ function setPaymentMethod(method) {
   if (manualConfig) {
     checkoutBuyBtn.hidden = true;
     checkoutManualBtn.hidden = false;
-    checkoutManualBtn.textContent = manualConfig.buyLabel;
   } else {
     checkoutManualBtn.hidden = true;
     checkoutBuyBtn.hidden = false;
   }
 
+  refreshAllPrices();
+}
+
+// Обновляет текст кнопки ручной оплаты (NFT / RU карта). Для RU карты —
+// как и на "Купить" со звёздами — показывает зачёркнутую исходную цену и
+// цену со скидкой, если применён промокод. У NFT фиксированной цены нет
+// (оформляется перепиской с владельцем), поэтому для неё просто оставляем
+// исходный текст без цены.
+function updateManualButtonLabel() {
+  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
+  if (!manualConfig) return;
+
+  if (checkoutPaymentMethod === "card") {
+    const duration = DURATIONS.find((d) => d.code === checkoutDuration) || DURATIONS[0];
+    const basePrice = RU_CARD_PRICES[duration.code];
+
+    if (basePrice != null) {
+      const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
+      const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
+
+      if (hasDiscount) {
+        checkoutManualOldPrice.textContent = `${basePrice} ₽`;
+        checkoutManualOldPrice.hidden = false;
+      } else {
+        checkoutManualOldPrice.hidden = true;
+      }
+
+      checkoutManualText.textContent = hasDiscount
+        ? `Нажмите для оплаты — ${finalPrice} ₽`
+        : `Нажмите для оплаты — ${basePrice} ₽`;
+      return;
+    }
+  }
+
+  checkoutManualOldPrice.hidden = true;
+  checkoutManualText.textContent = manualConfig.buyLabel;
+}
+
+// Единая точка обновления всех цен на экране оформления — вызывается при
+// смене тарифа, способа оплаты, а также при применении/снятии промокода,
+// чтобы скидка сразу и везде: на карточках тарифа, на кнопке "Купить" и
+// на кнопке ручной оплаты (RU карта).
+function refreshAllPrices() {
+  if (!checkoutProduct) return;
   refreshDurationPrices();
+  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+  updateManualButtonLabel();
 }
 
 paymentOptions.addEventListener("click", (e) => {
@@ -591,7 +661,7 @@ function openCheckout(product, prefillPromoCode) {
   });
 
   checkoutBuyBtn.disabled = false;
-  updateBuyButtonLabel(checkoutBuyText, product, checkoutDuration);
+  refreshAllPrices();
   setCardStatus(checkoutStatus, "");
 
   switchView("checkout");
@@ -614,7 +684,7 @@ checkoutDurations.addEventListener("click", (e) => {
   });
 
   checkoutDuration = btn.dataset.duration;
-  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+  refreshAllPrices();
   tg?.HapticFeedback?.selectionChanged();
 });
 
@@ -648,7 +718,7 @@ async function applyPromoCode() {
     checkoutPromoApply.textContent = "Применить";
     checkoutPromoInput.disabled = false;
     setPromoStatus("Промокод не найден или уже использован", "error");
-    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    refreshAllPrices();
     tg?.HapticFeedback?.notificationOccurred("error");
     return;
   }
@@ -659,7 +729,7 @@ async function applyPromoCode() {
   checkoutPromoApply.classList.add("promo-apply-btn--applied");
   checkoutPromoInput.disabled = true;
   setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
-  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+  refreshAllPrices();
   tg?.HapticFeedback?.notificationOccurred("success");
 }
 
@@ -676,7 +746,7 @@ checkoutPromoApply.addEventListener("click", () => {
     checkoutPromoApply.textContent = "Применить";
     checkoutPromoApply.classList.remove("promo-apply-btn--applied");
     setPromoStatus("");
-    updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
+    refreshAllPrices();
     return;
   }
 
