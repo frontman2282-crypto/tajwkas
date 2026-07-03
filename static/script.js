@@ -138,6 +138,22 @@ async function hideSplash() {
 
   app.classList.add("app--ready");
   initApp();
+
+  // Сплэш полностью убираем из DOM после того, как доиграет его opacity-
+  // transition (0.5s). До этого момента CSS уже ставит его анимации на
+  // паузу (.splash--hidden — см. style.css), но сам узел с обвязкой
+  // (5 keyframe-анимаций, blur-фильтры) до сих пор существовал в дереве
+  // документа всю сессию просто "на всякий случай". Явное удаление — либо
+  // по событию transitionend, либо (страховка) по таймеру — освобождает
+  // память и убирает лишние слои у браузера.
+  let splashRemoved = false;
+  function removeSplash() {
+    if (splashRemoved) return;
+    splashRemoved = true;
+    splash.remove();
+  }
+  splash.addEventListener("transitionend", removeSplash, { once: true });
+  setTimeout(removeSplash, 700);
 }
 
 // Сплэш показывается РОВНО 4 секунды — фиксированная длительность, а не
@@ -535,11 +551,20 @@ function showNftModal() {
 
   nftModal.hidden = false;
 
+  // Перезапускаем анимацию появления модалки без синхронного форсированного
+  // reflow (void el.offsetHeight сразу в обработчике клика блокирует поток
+  // на время пересчёта layout — на слабых устройствах это и ощущается как
+  // "тормознутость" в момент открытия). Двойной requestAnimationFrame даёт
+  // тот же гарантированный перезапуск именованной CSS-анимации, но не
+  // блокирует поток синхронным чтением layout-свойства.
   [nftModalBackdrop, nftModal.querySelector(".nft-modal-card")].forEach((el) => {
     if (!el) return;
     el.style.animation = "none";
-    void el.offsetHeight;
-    el.style.animation = "";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.style.animation = "";
+      });
+    });
   });
 }
 
@@ -602,11 +627,22 @@ let checkoutAnimSafetyTimer = null;
 // этих элементов — opacity: 1, а не 0.
 function playCheckoutEntrance() {
   checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
-  void viewCheckout.offsetHeight; // форсируем reflow перед повторным добавлением класса
 
-  checkoutAnimatedEls.forEach((el, index) => {
-    el.style.animationDelay = `${index * 70 + 60}ms`;
-    el.classList.add("co-anim-in");
+  // Раньше здесь стоял `void viewCheckout.offsetHeight` — синхронный
+  // форсированный reflow прямо в обработчике клика по карточке товара
+  // (открытие оформления). Именно такие синхронные reflow в момент клика
+  // и ощущались как "нажатие не сработало с первого раза": браузер сначала
+  // должен был синхронно пересчитать layout всего экрана, и только потом
+  // — обработать сам переход, из-за чего реакция на тап "запаздывала".
+  // Двойной requestAnimationFrame даёт тот же гарантированный перезапуск
+  // анимации без блокировки потока.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      checkoutAnimatedEls.forEach((el, index) => {
+        el.style.animationDelay = `${index * 70 + 60}ms`;
+        el.classList.add("co-anim-in");
+      });
+    });
   });
 
   clearTimeout(checkoutAnimSafetyTimer);
@@ -1330,8 +1366,13 @@ function showCasePrizeModal(discountPercent, code) {
   [casePrizeModalBackdrop, casePrizeModal.querySelector(".case-prize-modal-card")].forEach((el) => {
     if (!el) return;
     el.style.animation = "none";
-    void el.offsetHeight;
-    el.style.animation = "";
+    // Двойной rAF вместо синхронного void el.offsetHeight — см. подробное
+    // объяснение у showNftModal() выше: та же логика, тот же выигрыш.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        el.style.animation = "";
+      });
+    });
   });
 }
 
@@ -1439,7 +1480,8 @@ async function openCase() {
 
     caseResult.hidden = false;
     caseResult.style.animation = "none";
-    caseResult.offsetHeight; // reflow, чтобы анимация точно применилась заново
+    // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     caseResult.style.animation = "";
     caseAgainBtn.hidden = false;
 
