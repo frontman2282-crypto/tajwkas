@@ -680,6 +680,29 @@ body.keyboard-open .tabbar {
   white-space: normal;
 }
 
+.duration-option-price--discounted {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.duration-option-price-old {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.75;
+  text-decoration: line-through;
+}
+
+.duration-option-price-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: inherit;
+}
+
 .duration-option--selected .duration-option-price--note {
   color: var(--text-main);
 }
@@ -1013,6 +1036,15 @@ body.keyboard-open .tabbar {
   opacity: 0.6;
   cursor: default;
   transform: none;
+}
+
+/* Явно перекрываем свой же display:flex выше для [hidden] — та же логика,
+   что и у .tab[hidden]: авторский display:flex имеет приоритет над
+   стандартным UA-стилем [hidden]{display:none}, поэтому без этого правила
+   кнопки "Купить" (звёзды) и "Нажмите для оплаты" (NFT/RU карта) были бы
+   видны ОБЕ ОДНОВРЕМЕННО при переключении способа оплаты. */
+.buy-btn[hidden] {
+  display: none;
 }
 
 .buy-btn--manual {
