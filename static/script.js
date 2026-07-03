@@ -90,16 +90,52 @@ if (tg) {
   });
 }
 
+// ====== Проверка бана ======
+// Единственный пользователь с правами админа в мини-аппе — используется,
+// чтобы показать вкладку "Админ" в таббаре и открыть /view-admin. Реальная
+// проверка прав на любое админ-действие всё равно происходит на сервере
+// по подписанному initData — этот id тут только чтобы не показывать
+// вкладку случайным людям.
+const ADMIN_ID = 8606714114;
+
+// Запускаем проверку бана СРАЗУ, не дожидаясь окончания сплэша — так к
+// моменту, когда сплэш обычно скрывается, ответ сервера уже готов и не
+// добавляет дополнительной задержки.
+function checkBanStatus() {
+  if (!tg) return Promise.resolve(false);
+  return fetch("/check_ban", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ init_data: tg.initData }),
+  })
+    .then((r) => r.json())
+    .then((data) => !!data.banned)
+    .catch(() => false);
+}
+
+const banStatusPromise = checkBanStatus();
+
 // ====== Сплэш / плавное появление ======
 const splash = document.getElementById("splash");
 const app = document.getElementById("app");
+const bannedScreen = document.getElementById("bannedScreen");
 
 let splashDone = false;
 
-function hideSplash() {
+async function hideSplash() {
   if (splashDone) return;
   splashDone = true;
+
+  const banned = await banStatusPromise.catch(() => false);
   splash.classList.add("splash--hidden");
+
+  if (banned) {
+    // Пользователь забанен — вместо приложения показываем экран-заглушку
+    // и дальше приложение не инициализируем вовсе.
+    bannedScreen.hidden = false;
+    return;
+  }
+
   app.classList.add("app--ready");
   initApp();
 }
@@ -184,15 +220,7 @@ function applyDurationPrice(priceEl, duration) {
   } else if (checkoutPaymentMethod === "card") {
     priceEl.classList.remove("duration-option-price--note");
     const rubPrice = RU_CARD_PRICES[duration.code];
-    if (rubPrice == null) {
-      priceEl.innerHTML = "—";
-    } else {
-      const finalRubPrice = getFinalPrice(rubPrice, checkoutDiscountPercent);
-      priceEl.innerHTML =
-        checkoutDiscountPercent > 0 && finalRubPrice < rubPrice
-          ? `<span class="duration-option-price-old">${rubPrice} ₽</span> ${finalRubPrice} ₽`
-          : `${rubPrice} ₽`;
-    }
+    priceEl.innerHTML = rubPrice != null ? `${rubPrice} ₽` : "—";
   } else {
     priceEl.classList.remove("duration-option-price--note");
     priceEl.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
@@ -615,7 +643,6 @@ async function applyPromoCode() {
     checkoutPromoInput.disabled = false;
     setPromoStatus("Промокод не найден или уже использован", "error");
     updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-    refreshDurationPrices();
     tg?.HapticFeedback?.notificationOccurred("error");
     return;
   }
@@ -627,7 +654,6 @@ async function applyPromoCode() {
   checkoutPromoInput.disabled = true;
   setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
   updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-  refreshDurationPrices();
   tg?.HapticFeedback?.notificationOccurred("success");
 }
 
@@ -645,7 +671,6 @@ checkoutPromoApply.addEventListener("click", () => {
     checkoutPromoApply.classList.remove("promo-apply-btn--applied");
     setPromoStatus("");
     updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-    refreshDurationPrices();
     return;
   }
 
@@ -686,6 +711,7 @@ const views = {
   checkout: viewCheckout,
   case: document.getElementById("view-case"),
   mypromos: document.getElementById("view-mypromos"),
+  admin: document.getElementById("view-admin"),
 };
 
 // Экраны, которые визуально являются "внутренними" для другого раздела —
@@ -747,6 +773,10 @@ tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
     switchView(tab.dataset.view);
     tg?.HapticFeedback?.selectionChanged();
+    if (tab.dataset.view === "admin") {
+      loadBannedList();
+      loadAdminPromos();
+    }
   });
 });
 
@@ -805,6 +835,7 @@ const profileAvatarFallback = document.getElementById("profileAvatarFallback");
 const profileAvatarLetter = document.getElementById("profileAvatarLetter");
 const profileName = document.getElementById("profileName");
 const profileUsername = document.getElementById("profileUsername");
+const adminTabBtn = document.getElementById("adminTabBtn");
 
 // Простая иконка пользователя — показывается, если у нас вообще нет
 // данных о человеке (не открыто из Telegram)
@@ -819,6 +850,13 @@ function showAvatarFallback(letterOrIcon) {
 
 function fillProfileFromTelegram() {
   const user = tg?.initDataUnsafe?.user;
+
+  // Вкладка "Админ" видна только владельцу (проверка тут — просто чтобы
+  // не показывать её случайным людям в интерфейсе; реальные права на
+  // любое действие всё равно перепроверяются на сервере по initData).
+  if (user && user.id === ADMIN_ID) {
+    adminTabBtn.hidden = false;
+  }
 
   if (!user) {
     profileName.textContent = "Гость";
@@ -1392,6 +1430,224 @@ caseCopyBtn.addEventListener("click", async () => {
   tg?.HapticFeedback?.selectionChanged();
 });
 
+
+// ====== Админ-панель ======
+// Все запросы этого блока идут с init_data, и сервер САМ перепроверяет,
+// что это действительно ADMIN_ID (см. is_admin_init_data в bot.py) —
+// поэтому даже если кто-то откроет вкладку в обход (например, вручную
+// вызвав switchView в консоли), никакое действие всё равно не пройдёт.
+
+const adminBanInput = document.getElementById("adminBanInput");
+const adminBanBtn = document.getElementById("adminBanBtn");
+const adminBanStatus = document.getElementById("adminBanStatus");
+const adminBannedList = document.getElementById("adminBannedList");
+const adminBannedEmpty = document.getElementById("adminBannedEmpty");
+
+const adminPromoCode = document.getElementById("adminPromoCode");
+const adminPromoDiscount = document.getElementById("adminPromoDiscount");
+const adminPromoActivations = document.getElementById("adminPromoActivations");
+const adminPromoCreateBtn = document.getElementById("adminPromoCreateBtn");
+const adminPromoStatus = document.getElementById("adminPromoStatus");
+const adminPromoList = document.getElementById("adminPromoList");
+const adminPromoEmpty = document.getElementById("adminPromoEmpty");
+
+// Иконка "крестик" для кнопок удаления/разбана в списках
+const REMOVE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
+
+function setAdminStatus(el, text, type = "") {
+  el.textContent = text;
+  el.className = "promo-status" + (type ? " " + type : "");
+}
+
+async function adminPost(url, payload) {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ init_data: tg ? tg.initData : "", ...payload }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || "Ошибка запроса");
+  }
+  return data;
+}
+
+// --- Бан пользователей ---
+
+async function loadBannedList() {
+  try {
+    const data = await adminPost("/admin/banned_list", {});
+    renderBannedList(data.banned || []);
+  } catch (err) {
+    // Тихо игнорируем — например, если вкладка на секунду открылась не у
+    // админа (initData ещё не готова при самом первом рендере).
+  }
+}
+
+function renderBannedList(items) {
+  adminBannedList.innerHTML = "";
+  adminBannedEmpty.hidden = items.length > 0;
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "admin-list-item";
+
+    const info = document.createElement("div");
+    info.className = "admin-list-item-info";
+
+    const title = document.createElement("div");
+    title.className = "admin-list-item-title";
+    title.textContent = item.username ? "@" + item.username : `id ${item.user_id}`;
+
+    const sub = document.createElement("div");
+    sub.className = "admin-list-item-sub";
+    sub.textContent = item.user_id && item.username ? `id ${item.user_id}` : "забанен";
+
+    info.appendChild(title);
+    info.appendChild(sub);
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "admin-list-item-remove";
+    removeBtn.innerHTML = REMOVE_ICON_SVG;
+    removeBtn.addEventListener("click", () => unbanUser(item.key));
+
+    row.appendChild(info);
+    row.appendChild(removeBtn);
+    adminBannedList.appendChild(row);
+  });
+}
+
+async function unbanUser(key) {
+  try {
+    await adminPost("/admin/unban", { key });
+    tg?.HapticFeedback?.selectionChanged();
+    loadBannedList();
+  } catch (err) {
+    setAdminStatus(adminBanStatus, "Не удалось разбанить, попробуй ещё раз", "error");
+  }
+}
+
+adminBanBtn.addEventListener("click", async () => {
+  const target = adminBanInput.value.trim();
+  if (!target) {
+    setAdminStatus(adminBanStatus, "Введи username или id", "error");
+    return;
+  }
+
+  adminBanBtn.disabled = true;
+  try {
+    await adminPost("/admin/ban", { target });
+    adminBanInput.value = "";
+    setAdminStatus(adminBanStatus, "Пользователь забанен", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    loadBannedList();
+  } catch (err) {
+    setAdminStatus(adminBanStatus, "Не удалось забанить: " + err.message, "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    adminBanBtn.disabled = false;
+  }
+});
+
+// --- Промокоды ---
+
+async function loadAdminPromos() {
+  try {
+    const data = await adminPost("/admin/promo/list", {});
+    renderAdminPromos(data.promos || []);
+  } catch (err) {
+    // см. комментарий в loadBannedList
+  }
+}
+
+function renderAdminPromos(items) {
+  adminPromoList.innerHTML = "";
+  adminPromoEmpty.hidden = items.length > 0;
+
+  items.forEach((promo) => {
+    const row = document.createElement("div");
+    row.className = "admin-list-item";
+
+    const info = document.createElement("div");
+    info.className = "admin-list-item-info";
+
+    const title = document.createElement("div");
+    title.className = "admin-list-item-title";
+    title.textContent = promo.code;
+
+    const sub = document.createElement("div");
+    sub.className = "admin-list-item-sub";
+    sub.textContent = `Активировано ${promo.activations} из ${promo.max_activations}`;
+
+    info.appendChild(title);
+    info.appendChild(sub);
+
+    const badge = document.createElement("span");
+    badge.className = "admin-list-item-badge";
+    badge.textContent = `-${promo.discount_percent}%`;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "admin-list-item-remove";
+    removeBtn.innerHTML = REMOVE_ICON_SVG;
+    removeBtn.addEventListener("click", () => deleteAdminPromo(promo.code));
+
+    row.appendChild(info);
+    row.appendChild(badge);
+    row.appendChild(removeBtn);
+    adminPromoList.appendChild(row);
+  });
+}
+
+async function deleteAdminPromo(code) {
+  try {
+    await adminPost("/admin/promo/delete", { code });
+    tg?.HapticFeedback?.selectionChanged();
+    loadAdminPromos();
+  } catch (err) {
+    setAdminStatus(adminPromoStatus, "Не удалось удалить промокод", "error");
+  }
+}
+
+adminPromoCreateBtn.addEventListener("click", async () => {
+  const code = adminPromoCode.value.trim();
+  const discountPercent = parseInt(adminPromoDiscount.value, 10);
+  const maxActivations = parseInt(adminPromoActivations.value, 10);
+
+  if (!code) {
+    setAdminStatus(adminPromoStatus, "Введи название промокода", "error");
+    return;
+  }
+  if (!Number.isFinite(discountPercent) || discountPercent < 1 || discountPercent > 100) {
+    setAdminStatus(adminPromoStatus, "Скидка должна быть от 1 до 100%", "error");
+    return;
+  }
+  if (!Number.isFinite(maxActivations) || maxActivations < 1) {
+    setAdminStatus(adminPromoStatus, "Укажи количество активаций (минимум 1)", "error");
+    return;
+  }
+
+  adminPromoCreateBtn.disabled = true;
+  try {
+    await adminPost("/admin/promo/create", {
+      code,
+      discount_percent: discountPercent,
+      max_activations: maxActivations,
+    });
+    adminPromoCode.value = "";
+    adminPromoDiscount.value = "";
+    adminPromoActivations.value = "";
+    setAdminStatus(adminPromoStatus, "Промокод создан", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    loadAdminPromos();
+  } catch (err) {
+    setAdminStatus(adminPromoStatus, "Не удалось создать: " + err.message, "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    adminPromoCreateBtn.disabled = false;
+  }
+});
 
 // ====== Инициализация ======
 // Рендерим карточки и профиль только когда сплэш реально скрывается —
