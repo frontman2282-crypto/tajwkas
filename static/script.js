@@ -26,7 +26,11 @@ const DURATIONS = [
 // Цены в рублях при оплате способом "RU карта" — оформляется вручную
 // через личные сообщения с владельцем, поэтому цены задаются отдельно
 // от цен в Telegram Stars.
-const RU_CARD_PRICES = { "7d": 410, "30d": 1400, "12m": 5200 };
+const RU_CARD_PRICES = { "7d": 350, "30d": 1200, "12m": 4500 };
+
+// Цены в гривнах при оплате способом "UAH (Гривна)" — оформляется точно
+// так же вручную, перепиской с владельцем в личных сообщениях.
+const UAH_CARD_PRICES = { "7d": 200, "30d": 600, "12m": 2300 };
 
 // Промокод проверяется и считается всегда на сервере (в bot.py) — это
 // касается и статических кодов, и одноразовых кодов из кейса, клиенту в
@@ -192,7 +196,12 @@ function renderProducts() {
     node.querySelector(".card-row-initial").textContent = product.initial;
     node.querySelector(".card-row-title").textContent = product.title;
     node.querySelector(".card-row-subtitle").textContent = product.subtitle;
-    node.querySelector(".price-value").textContent = product.price;
+    // Цена на карточке товара в списке магазина больше не показывается —
+    // у товара несколько тарифов (7 дней / 30 дней / 12 месяцев) с разной
+    // ценой, и единственное число тут только сбивало с толку. Реальные
+    // цены по тарифам видны на экране оформления.
+    const priceEl = node.querySelector(".card-row-price");
+    if (priceEl) priceEl.hidden = true;
 
     // Клик по карточке — переходим на отдельный экран оформления покупки
     row.addEventListener("click", () => {
@@ -249,7 +258,12 @@ function applyDurationPrice(priceEl, duration) {
   priceEl.classList.remove("duration-option-price--note");
 
   const isCard = checkoutPaymentMethod === "card";
-  const basePrice = isCard ? RU_CARD_PRICES[duration.code] : duration.price;
+  const isUah = checkoutPaymentMethod === "uah";
+  const basePrice = isCard
+    ? RU_CARD_PRICES[duration.code]
+    : isUah
+      ? UAH_CARD_PRICES[duration.code]
+      : duration.price;
 
   if (basePrice == null) {
     priceEl.classList.remove("duration-option-price--discounted");
@@ -257,7 +271,7 @@ function applyDurationPrice(priceEl, duration) {
     return;
   }
 
-  const unit = isCard ? "₽" : STAR_ICON_SVG;
+  const unit = isCard ? "₽" : isUah ? "₴" : STAR_ICON_SVG;
   const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
   const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
 
@@ -408,8 +422,8 @@ const nftModalCancel = document.getElementById("nftModalCancel");
 const nftModalWrite = document.getElementById("nftModalWrite");
 
 // Telegram-логин владельца, которому пишет пользователь при оплате
-// способами, оформляемыми вручную (NFT, Русская карта).
-const MANUAL_PAYMENT_OWNER_USERNAME = "meaninglessperson";
+// способами, оформляемыми вручную (NFT, RU карта, UAH).
+const MANUAL_PAYMENT_OWNER_USERNAME = "alyuplost";
 
 // Способы оплаты, которые оформляются не автоматически, а перепиской с
 // владельцем в личных сообщениях. Чтобы добавить новый такой способ,
@@ -425,6 +439,11 @@ const MANUAL_PAYMENT_METHODS = {
     buyLabel: "Нажмите для оплаты RU картой",
     modalTitle: "Оплата RU картой",
     modalText: "Напишите владельцу, чтобы оформить оплату RU картой",
+  },
+  uah: {
+    buyLabel: "Нажмите для оплаты UAH (Гривны)",
+    modalTitle: "Оплата UAH (Гривны)",
+    modalText: "Напишите владельцу, чтобы оформить оплату гривной",
   },
 };
 
@@ -488,24 +507,26 @@ function updateManualButtonLabel() {
   const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
   if (!manualConfig) return;
 
-  if (checkoutPaymentMethod === "card") {
+  if (checkoutPaymentMethod === "card" || checkoutPaymentMethod === "uah") {
     const duration = DURATIONS.find((d) => d.code === checkoutDuration) || DURATIONS[0];
-    const basePrice = RU_CARD_PRICES[duration.code];
+    const priceMap = checkoutPaymentMethod === "card" ? RU_CARD_PRICES : UAH_CARD_PRICES;
+    const unit = checkoutPaymentMethod === "card" ? "₽" : "₴";
+    const basePrice = priceMap[duration.code];
 
     if (basePrice != null) {
       const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
       const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
 
       if (hasDiscount) {
-        checkoutManualOldPrice.textContent = `${basePrice} ₽`;
+        checkoutManualOldPrice.textContent = `${basePrice} ${unit}`;
         checkoutManualOldPrice.hidden = false;
       } else {
         checkoutManualOldPrice.hidden = true;
       }
 
       checkoutManualText.textContent = hasDiscount
-        ? `Нажмите для оплаты — ${finalPrice} ₽`
-        : `Нажмите для оплаты — ${basePrice} ₽`;
+        ? `Нажмите для оплаты — ${finalPrice} ${unit}`
+        : `Нажмите для оплаты — ${basePrice} ${unit}`;
       return;
     }
   }
@@ -1303,10 +1324,21 @@ const casePrizeModalOk = document.getElementById("casePrizeModalOk");
 // Значения приза только для визуального наполнения рулетки декоями —
 // реальный приз всегда приходит с сервера (см. /open_case в bot.py),
 // клиент его не выбирает и не может повлиять на результат.
-const CASE_REEL_VALUES = [5, 10, 15, 30, 50];
+const CASE_REEL_VALUES = [3, 5, 10, 15, 30, 50];
 const CASE_REEL_DECOYS_BEFORE = 28;
 const CASE_REEL_DECOYS_AFTER = 6;
 const CASE_SPIN_DURATION_MS = 3200;
+
+// Кейс теперь платный — цена должна совпадать с CASE_PRICE_STARS в bot.py.
+const CASE_PRICE_STARS = 60;
+const CASE_OPEN_BTN_LABEL = `Открыть кейс — 60 ${STAR_ICON_SVG}`;
+
+// Сколько раз и с каким интервалом опрашивать /claim_case_reward после
+// того, как Telegram сообщил статус оплаты "paid" — реальный приз
+// "крутится" на сервере в момент successful_payment, который приходит
+// боту чуть позже, чем колбэк tg.openInvoice в мини-аппе.
+const CASE_CLAIM_POLL_INTERVAL_MS = 700;
+const CASE_CLAIM_POLL_ATTEMPTS = 20;
 
 function setCaseStatus(text, type = "") {
   caseStatus.textContent = text;
@@ -1346,7 +1378,7 @@ function resetCaseStage() {
   caseStage.classList.remove("case-stage--spinning", "case-stage--opened");
   caseOpenBtn.hidden = false;
   caseOpenBtn.disabled = false;
-  caseOpenBtn.textContent = "Открыть кейс";
+  caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
   setCaseStatus("");
   hideCasePrizeModal();
 }
@@ -1406,7 +1438,7 @@ function spinReelTo(discountPercent) {
   // раньше, на настоящем (небольшом) призе. Сам результат при этом никак
   // не меняется — это чисто визуальный штрих ленты, приз всегда решён
   // сервером заранее.
-  if (discountPercent === 5 || discountPercent === 10) {
+  if (discountPercent === 3 || discountPercent === 5 || discountPercent === 10) {
     const nearValue = Math.random() < 0.5 ? 30 : 50;
     items[items.length - 1] = nearValue;
   }
@@ -1445,66 +1477,127 @@ function spinReelTo(discountPercent) {
   });
 }
 
-async function openCase() {
-  caseOpenBtn.disabled = true;
-  caseOpenBtn.hidden = true;
-  caseResult.hidden = true;
-  caseAgainBtn.hidden = true;
-  setCaseStatus("");
-  caseStage.classList.add("case-stage--spinning");
-  caseReelWrap.hidden = false;
-
-  try {
-    const response = await fetch("/open_case", {
+// Ждёт, пока сервер "прокрутит" приз после подтверждённой оплаты
+// (см. successful_payment_handler в bot.py), опрашивая /claim_case_reward.
+// Оплата подтверждается ботом асинхронно (через successful_payment), а не
+// прямо в колбэке tg.openInvoice, поэтому сразу после статуса "paid"
+// приза может ещё не быть — отсюда и короткие повторные попытки.
+async function pollCaseReward() {
+  for (let attempt = 0; attempt < CASE_CLAIM_POLL_ATTEMPTS; attempt++) {
+    const response = await fetch("/claim_case_reward", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
     });
-    if (!response.ok) throw new Error("Сервер не смог открыть кейс");
-    const data = await response.json();
-
-    spinReelTo(data.discount_percent);
-    tg?.HapticFeedback?.selectionChanged();
-
-    // Ждём, пока рулетка реально докрутится до приза, и только потом
-    // показываем карточку результата — иначе она появится раньше, чем
-    // прокрутка остановится, и будет выглядеть рассинхронизированно.
-    await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
-
-    caseResultBadge.textContent = `-${data.discount_percent}%`;
-    caseResultBadge.className = "case-result-badge " + rarityClassFor(data.discount_percent);
-    caseResultCode.textContent = data.code;
-
-    caseCopyBtn.textContent = "Скопировать";
-    caseCopyBtn.classList.remove("case-copy-btn--copied");
-
-    caseResult.hidden = false;
-    caseResult.style.animation = "none";
-    // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    caseResult.style.animation = "";
-    caseAgainBtn.hidden = false;
-
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseStage.classList.add("case-stage--opened");
-
-    setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
-
-    // Мини-меню с промокодом поверх экрана — появляется сразу после того,
-    // как кнопка "Открыть кейс ещё раз" уже видна.
-    showCasePrizeModal(data.discount_percent, data.code);
-  } catch (err) {
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseOpenBtn.hidden = false;
-    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    caseOpenBtn.disabled = false;
-    caseOpenBtn.textContent = "Открыть кейс";
+    if (response.ok) {
+      const data = await response.json();
+      if (data.ready) return data;
+    }
+    await new Promise((resolve) => setTimeout(resolve, CASE_CLAIM_POLL_INTERVAL_MS));
   }
+  return null;
+}
+
+async function openCase() {
+  if (!tg) {
+    setCaseStatus("Открой это приложение внутри Telegram", "error");
+    return;
+  }
+
+  caseOpenBtn.disabled = true;
+  caseOpenBtn.textContent = "Открываем оплату...";
+  setCaseStatus("");
+
+  let invoiceLink;
+  try {
+    const response = await fetch("/create_case_invoice", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ init_data: tg.initData }),
+    });
+    if (!response.ok) {
+      const errData = await response.json().catch(() => ({}));
+      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось создать оплату");
+    }
+    const data = await response.json();
+    invoiceLink = data.invoice_link;
+  } catch (err) {
+    caseOpenBtn.disabled = false;
+    caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+    setCaseStatus(err.message || "Не удалось открыть оплату, попробуй ещё раз", "error");
+    return;
+  }
+
+  tg.openInvoice(invoiceLink, async (status) => {
+    if (status !== "paid") {
+      caseOpenBtn.disabled = false;
+      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+      if (status === "cancelled") {
+        setCaseStatus("Оплата отменена");
+      } else if (status === "failed") {
+        setCaseStatus("Оплата не прошла", "error");
+      } else {
+        setCaseStatus("Статус: " + status);
+      }
+      return;
+    }
+
+    caseOpenBtn.hidden = true;
+    caseResult.hidden = true;
+    caseAgainBtn.hidden = true;
+    setCaseStatus("Оплата прошла, крутим кейс...");
+    caseStage.classList.add("case-stage--spinning");
+    caseReelWrap.hidden = false;
+
+    try {
+      const reward = await pollCaseReward();
+      if (!reward) {
+        throw new Error("Оплата прошла, но приз пока не пришёл — открой «Мои промокоды» через минуту");
+      }
+
+      spinReelTo(reward.discount_percent);
+      tg?.HapticFeedback?.selectionChanged();
+
+      // Ждём, пока рулетка реально докрутится до приза, и только потом
+      // показываем карточку результата — иначе она появится раньше, чем
+      // прокрутка остановится, и будет выглядеть рассинхронизированно.
+      await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
+
+      caseResultBadge.textContent = `-${reward.discount_percent}%`;
+      caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
+      caseResultCode.textContent = reward.code;
+
+      caseCopyBtn.textContent = "Скопировать";
+      caseCopyBtn.classList.remove("case-copy-btn--copied");
+
+      caseResult.hidden = false;
+      caseResult.style.animation = "none";
+      // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      caseResult.style.animation = "";
+      caseAgainBtn.hidden = false;
+
+      caseReelWrap.hidden = true;
+      caseStage.classList.remove("case-stage--spinning");
+      caseStage.classList.add("case-stage--opened");
+
+      setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
+      tg?.HapticFeedback?.notificationOccurred("success");
+
+      // Мини-меню с промокодом поверх экрана — появляется сразу после того,
+      // как кнопка "Открыть кейс ещё раз" уже видна.
+      showCasePrizeModal(reward.discount_percent, reward.code);
+    } catch (err) {
+      caseReelWrap.hidden = true;
+      caseStage.classList.remove("case-stage--spinning");
+      caseOpenBtn.hidden = false;
+      setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
+      tg?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      caseOpenBtn.disabled = false;
+      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+    }
+  });
 }
 
 caseEntryCard.addEventListener("click", () => {
