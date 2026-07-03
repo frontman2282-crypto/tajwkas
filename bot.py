@@ -17,6 +17,13 @@
      текущего пользователя (мультивыбор в "Моих промокодах").
    - POST /delete_all_promo_codes — удаляет вообще все неиспользованные
      кейсовые промокоды текущего пользователя.
+   - POST /check_ban — проверяет, забанен ли текущий пользователь
+     мини-аппа (используется на splash-экране).
+   - POST /admin/ban, /admin/unban, /admin/banned_list — управление
+     банами (только для ADMIN_ID, см. константу ниже).
+   - POST /admin/promo/create, /admin/promo/delete, /admin/promo/list —
+     управление многоразовыми промокодами из админ-панели (только для
+     ADMIN_ID).
 
 Установка зависимостей (aiogram у тебя уже есть):
     pip install aiohttp aiohttp-cors
@@ -63,6 +70,14 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_ТОКЕН_БОТ
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://твой-адрес.onrender.com")
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))  # Render подставит свой PORT сам
+
+# ====== Админ ======
+# Единственный пользователь, которому доступна вкладка "Админ-панель" в
+# мини-аппе. Проверка всегда идёт по user_id, извлечённому из подписанного
+# initData (см. resolve_user), а не по тому, что прислал клиент, — так
+# никто другой не сможет открыть панель, даже подделав запрос.
+ADMIN_ID = 8606714114
+ADMIN_USERNAME = "meaninglessperson"  # только для справки/отображения
 
 # Каталог товаров: id -> (название, описание, цена в звёздах)
 PRODUCTS = {
@@ -152,6 +167,90 @@ def _save_generated_promos() -> None:
 GENERATED_PROMOS: dict[str, dict] = _load_generated_promos()
 
 
+# ====== Забаненные пользователи (админ-панель) ======
+# Хранилище: ключ — произвольный внутренний id записи (строка), значение —
+# {"user_id": int|None, "username": str|None (нижний регистр, без "@")}.
+# Бан можно выдать и по числовому id, и по username — вторым способом
+# можно забанить человека, который вообще ни разу не открывал бота
+# (бэкенду не нужно "знать" его id заранее, потому что initData самого
+# забаненного пользователя при следующем открытии мини-аппа принесёт и
+# его username, и его id, и мы сможем сопоставить запись).
+BANNED_STORE_PATH = os.environ.get("BANNED_STORE_PATH", "banned_users.json")
+
+
+def _load_banned_users() -> dict[str, dict]:
+    try:
+        with open(BANNED_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_banned_users() -> None:
+    try:
+        with open(BANNED_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(BANNED_USERS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", BANNED_STORE_PATH)
+
+
+BANNED_USERS: dict[str, dict] = _load_banned_users()
+
+
+def _find_ban_entry(user_id: int | None, username: str | None) -> str | None:
+    """Ищет запись о бане по id или по username. Возвращает ключ записи
+    в BANNED_USERS, либо None, если пользователь не забанен."""
+    uname = username.lower().lstrip("@") if username else None
+    for key, entry in BANNED_USERS.items():
+        if user_id is not None and entry.get("user_id") == user_id:
+            return key
+        if uname and entry.get("username") == uname:
+            return key
+    return None
+
+
+def is_banned(user_id: int | None, username: str | None) -> bool:
+    return _find_ban_entry(user_id, username) is not None
+
+
+def _parse_ban_target(raw: str) -> tuple[int | None, str | None]:
+    """Разбирает то, что ввёл админ в поле "юзернейм или id" — либо
+    числовой id, либо username (с "@" или без)."""
+    target = raw.strip().lstrip("@")
+    if target.isdigit():
+        return int(target), None
+    return None, target.lower() if target else None
+
+
+# ====== Промокоды, созданные админом ======
+# В отличие от GENERATED_PROMOS (одноразовые призы из кейса, привязанные к
+# конкретному пользователю), это многоразовые промокоды с произвольным
+# названием, скидкой и лимитом активаций — их создаёт админ вручную из
+# админ-панели. Ключ — код в ВЕРХНЕМ регистре, значение — {"code": как
+# ввёл админ, "discount_percent": int, "max_activations": int,
+# "activations": int (сколько раз уже использован)}.
+ADMIN_PROMO_STORE_PATH = os.environ.get("ADMIN_PROMO_STORE_PATH", "admin_promos.json")
+
+
+def _load_admin_promos() -> dict[str, dict]:
+    try:
+        with open(ADMIN_PROMO_STORE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_admin_promos() -> None:
+    try:
+        with open(ADMIN_PROMO_STORE_PATH, "w", encoding="utf-8") as f:
+            json.dump(ADMIN_PROMOS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", ADMIN_PROMO_STORE_PATH)
+
+
+ADMIN_PROMOS: dict[str, dict] = _load_admin_promos()
+
+
 def resolve_user_id(init_data_raw: str | None) -> int | None:
     """Достаёт и проверяет user_id из initData Telegram Mini App.
 
@@ -169,6 +268,30 @@ def resolve_user_id(init_data_raw: str | None) -> int | None:
         return parsed.user.id if parsed.user else None
     except Exception:
         return None
+
+
+def resolve_user(init_data_raw: str | None) -> tuple[int | None, str | None]:
+    """То же, что resolve_user_id, но также возвращает username (в нижнем
+    регистре, без "@"), если он есть. Используется для проверки бана (бан
+    может быть выдан и по id, и по username) и для проверки прав админа.
+    """
+    if not init_data_raw:
+        return None, None
+    try:
+        parsed = safe_parse_webapp_init_data(token=BOT_TOKEN, init_data=init_data_raw)
+        if not parsed.user:
+            return None, None
+        username = parsed.user.username.lower() if parsed.user.username else None
+        return parsed.user.id, username
+    except Exception:
+        return None, None
+
+
+def is_admin_init_data(init_data_raw: str | None) -> bool:
+    """Проверяет, что запрос реально пришёл от ADMIN_ID (по подписанному
+    initData, а не по тому, что написал клиент)."""
+    user_id, _ = resolve_user(init_data_raw)
+    return user_id == ADMIN_ID
 
 
 def roll_case_prize() -> int:
@@ -204,6 +327,11 @@ def resolve_promo(promo_code_raw: str | None) -> tuple[int, dict | None]:
         return static["discount_percent"], {"type": "static"}
 
     key = raw.upper()
+
+    admin_promo = ADMIN_PROMOS.get(key)
+    if admin_promo and admin_promo["activations"] < admin_promo["max_activations"]:
+        return admin_promo["discount_percent"], {"type": "admin", "key": key}
+
     dynamic = GENERATED_PROMOS.get(key)
     if dynamic and not dynamic["used"]:
         return dynamic["discount_percent"], {"type": "case", "key": key}
@@ -236,6 +364,11 @@ dp = Dispatcher()
 
 @dp.message(CommandStart())
 async def start_handler(message: Message):
+    username = message.from_user.username.lower() if message.from_user.username else None
+    if is_banned(message.from_user.id, username):
+        await message.answer("🚫 Вы забанены и не можете пользоваться ботом.")
+        return
+
     kb = InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(
@@ -267,14 +400,21 @@ async def successful_payment_handler(message: Message):
     parts = raw_payload.split(":")
     product_id = parts[0] if len(parts) > 0 else ""
     duration_code = parts[1] if len(parts) > 1 else ""
-    promo_key = parts[2] if len(parts) > 2 else ""
+    promo_field = parts[2] if len(parts) > 2 else ""
     duration_label = DURATIONS.get(duration_code, {}).get("label", "")
 
-    # Кейсовый промокод одноразовый — помечаем его использованным только
-    # теперь, когда оплата реально прошла (а не просто была создана ссылка).
-    if promo_key and promo_key in GENERATED_PROMOS:
-        GENERATED_PROMOS[promo_key]["used"] = True
-        _save_generated_promos()
+    # promo_field теперь в формате "тип:ключ" (например "case:KICHIRO-A1B2C"
+    # или "admin:SALE50"), либо пустой, если промокод не применялся или был
+    # статическим. Списываем использование только теперь, когда оплата
+    # реально прошла (а не просто была создана ссылка на инвойс).
+    if promo_field and ":" in promo_field:
+        promo_type, promo_key = promo_field.split(":", 1)
+        if promo_type == "case" and promo_key in GENERATED_PROMOS:
+            GENERATED_PROMOS[promo_key]["used"] = True
+            _save_generated_promos()
+        elif promo_type == "admin" and promo_key in ADMIN_PROMOS:
+            ADMIN_PROMOS[promo_key]["activations"] += 1
+            _save_admin_promos()
 
     # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
@@ -295,6 +435,13 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     product_id = data.get("product_id")
     duration_code = data.get("duration", "30d")
     promo_code_raw = data.get("promo_code")
+
+    # Дополнительная защита: даже если забаненный пользователь как-то
+    # обошёл проверку /check_ban на фронтенде, инвойс всё равно не
+    # создастся.
+    ban_user_id, ban_username = resolve_user(data.get("init_data"))
+    if is_banned(ban_user_id, ban_username):
+        return web.json_response({"error": "banned"}, status=403)
 
     product = PRODUCTS.get(product_id)
     duration = DURATIONS.get(duration_code)
@@ -321,11 +468,13 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
     if promo_applied:
         description += f" (промокод -{promo['discount_percent']}%)"
 
-    # Для одноразовых кейсовых промокодов кладём их ключ в payload —
-    # так бот сможет пометить код использованным именно в момент успешной
-    # оплаты (successful_payment_handler), а не раньше, чтобы отменённая
-    # или неудавшаяся оплата не "сжигала" код впустую.
-    promo_key_for_payload = promo["key"] if promo_applied and promo.get("type") == "case" else ""
+    # Для одноразовых кейсовых и многоразовых админских промокодов кладём
+    # "тип:ключ" в payload — так бот сможет списать использование именно в
+    # момент успешной оплаты (successful_payment_handler), а не раньше,
+    # чтобы отменённая или неудавшаяся оплата не "сжигала" код впустую.
+    promo_key_for_payload = ""
+    if promo_applied and promo.get("type") in ("case", "admin"):
+        promo_key_for_payload = f"{promo['type']}:{promo['key']}"
     payload = f"{product_id}:{duration_code}:{promo_key_for_payload}"  # вернётся в successful_payment.invoice_payload
 
     invoice_link = await bot.create_invoice_link(
@@ -481,6 +630,173 @@ async def validate_promo_handler(request: web.Request) -> web.Response:
     })
 
 
+async def check_ban_handler(request: web.Request) -> web.Response:
+    """Проверяет, забанен ли текущий пользователь мини-аппа. Фронтенд
+    дёргает этот эндпоинт при каждом открытии, до того как показать сам
+    интерфейс — если пользователь забанен, вместо загрузки показывается
+    экран "Вы забанены"."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    user_id, username = resolve_user(body.get("init_data"))
+    return web.json_response({"banned": is_banned(user_id, username)})
+
+
+async def admin_ban_handler(request: web.Request) -> web.Response:
+    """Банит пользователя по username или id. Доступно только ADMIN_ID —
+    право проверяется по подписанному initData, а не по тому, что прислал
+    клиент."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_target = str(body.get("target", "")).strip()
+    if not raw_target:
+        return web.json_response({"error": "empty target"}, status=400)
+
+    target_id, target_username = _parse_ban_target(raw_target)
+    if target_id is None and not target_username:
+        return web.json_response({"error": "bad target"}, status=400)
+
+    # Не даём админу случайно забанить самого себя.
+    if target_id == ADMIN_ID or (target_username and target_username == ADMIN_USERNAME.lower()):
+        return web.json_response({"error": "cannot ban admin"}, status=400)
+
+    existing_key = _find_ban_entry(target_id, target_username)
+    key = existing_key or f"ban_{len(BANNED_USERS) + 1}_{random.randint(1000, 9999)}"
+    BANNED_USERS[key] = {"user_id": target_id, "username": target_username}
+    _save_banned_users()
+
+    return web.json_response({"banned": BANNED_USERS[key]})
+
+
+async def admin_unban_handler(request: web.Request) -> web.Response:
+    """Разбанивает пользователя. Принимает либо ключ записи ("key"),
+    либо тот же target (username/id), что и при бане."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    key = body.get("key")
+    if not key:
+        raw_target = str(body.get("target", "")).strip()
+        target_id, target_username = _parse_ban_target(raw_target)
+        key = _find_ban_entry(target_id, target_username)
+
+    if key and key in BANNED_USERS:
+        del BANNED_USERS[key]
+        _save_banned_users()
+        return web.json_response({"unbanned": key})
+
+    return web.json_response({"error": "not found"}, status=404)
+
+
+async def admin_banned_list_handler(request: web.Request) -> web.Response:
+    """Отдаёт список всех забаненных пользователей — для списка в
+    админ-панели."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    items = [{"key": key, **entry} for key, entry in BANNED_USERS.items()]
+    items.reverse()
+    return web.json_response({"banned": items})
+
+
+async def admin_promo_create_handler(request: web.Request) -> web.Response:
+    """Создаёт многоразовый промокод с произвольным названием, скидкой и
+    лимитом активаций. Доступно только ADMIN_ID."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_code = str(body.get("code", "")).strip()
+    if not raw_code:
+        return web.json_response({"error": "empty code"}, status=400)
+
+    try:
+        discount_percent = int(body.get("discount_percent"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad discount"}, status=400)
+    if not 1 <= discount_percent <= 100:
+        return web.json_response({"error": "discount out of range"}, status=400)
+
+    try:
+        max_activations = int(body.get("max_activations"))
+    except (TypeError, ValueError):
+        return web.json_response({"error": "bad max_activations"}, status=400)
+    if max_activations < 1:
+        return web.json_response({"error": "max_activations out of range"}, status=400)
+
+    key = raw_code.upper()
+    if key in ADMIN_PROMOS or key in GENERATED_PROMOS or raw_code.lower() in PROMO_CODES:
+        return web.json_response({"error": "code already exists"}, status=409)
+
+    ADMIN_PROMOS[key] = {
+        "code": raw_code,
+        "discount_percent": discount_percent,
+        "max_activations": max_activations,
+        "activations": 0,
+    }
+    _save_admin_promos()
+
+    return web.json_response({"promo": ADMIN_PROMOS[key]})
+
+
+async def admin_promo_delete_handler(request: web.Request) -> web.Response:
+    """Удаляет промокод, созданный из админ-панели."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_code = str(body.get("code", "")).strip()
+    key = raw_code.upper()
+
+    if key in ADMIN_PROMOS:
+        del ADMIN_PROMOS[key]
+        _save_admin_promos()
+        return web.json_response({"deleted": key})
+
+    return web.json_response({"error": "not found"}, status=404)
+
+
+async def admin_promo_list_handler(request: web.Request) -> web.Response:
+    """Отдаёт список всех промокодов, созданных из админ-панели."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    items = list(ADMIN_PROMOS.values())
+    items.reverse()
+    return web.json_response({"promos": items})
+
+
 async def avatar_handler(request: web.Request) -> web.Response:
     """Отдаёт аватар пользователя картинкой.
 
@@ -546,6 +862,13 @@ def build_web_app() -> web.Application:
     app.router.add_post("/delete_promo_codes", delete_promo_codes_handler)
     app.router.add_post("/delete_all_promo_codes", delete_all_promo_codes_handler)
     app.router.add_get("/validate_promo", validate_promo_handler)
+    app.router.add_post("/check_ban", check_ban_handler)
+    app.router.add_post("/admin/ban", admin_ban_handler)
+    app.router.add_post("/admin/unban", admin_unban_handler)
+    app.router.add_post("/admin/banned_list", admin_banned_list_handler)
+    app.router.add_post("/admin/promo/create", admin_promo_create_handler)
+    app.router.add_post("/admin/promo/delete", admin_promo_delete_handler)
+    app.router.add_post("/admin/promo/list", admin_promo_list_handler)
     app.router.add_get("/avatar", avatar_handler)
     app.router.add_get("/", index_handler)
     # Раздаём фронтенд (style.css, script.js) с того же домена.
