@@ -62,7 +62,7 @@
 
       <div class="shop-features">
         <button class="case-entry-card" id="caseEntryCard" type="button">
-          <span class="case-entry-free">FREE</span>
+          <span class="case-entry-price"><svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>60</span>
           <span class="case-entry-icon">
             <svg class="case-box-svg" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <defs>
@@ -289,8 +289,13 @@
               <span class="payment-option-check">✓</span>
             </button>
             <button class="payment-option" type="button" data-method="card">
-              <svg class="icon-nft" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 9.5h19"/><path d="M6 14.5h5"/></svg>
-              <span class="payment-option-label">RU карта</span>
+              <svg class="icon-nft icon-ru-badge" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.15"/><text x="12" y="17.5" text-anchor="middle" font-family="'Golos Text', Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">К</text></svg>
+              <span class="payment-option-label">RU Карта</span>
+              <span class="payment-option-check">✓</span>
+            </button>
+            <button class="payment-option" type="button" data-method="uah">
+              <svg class="icon-nft icon-ru-badge" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.15"/><text x="12" y="17.5" text-anchor="middle" font-family="'Golos Text', Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">₴</text></svg>
+              <span class="payment-option-label">UAH (Гривна)</span>
               <span class="payment-option-check">✓</span>
             </button>
           </div>
@@ -367,7 +372,7 @@
             <path d="M28 118 l2 6 6 2 -6 2 -2 6 -2 -6 -6 -2 6 -2z"/>
           </g>
         </svg>
-        <p class="case-stage-desc">Открой кейс и получи одноразовый промокод на скидку — от 5% до 50%.</p>
+        <p class="case-stage-desc">Открой кейс за 60 ★ и получи одноразовый промокод на скидку — от 3% до 50%.</p>
       </div>
 
       <div class="case-reel-wrap" id="caseReelWrap" hidden>
@@ -377,7 +382,7 @@
         <div class="case-reel-track" id="caseReelTrack"></div>
       </div>
 
-      <button class="case-open-btn" id="caseOpenBtn" type="button">Открыть кейс</button>
+      <button class="case-open-btn" id="caseOpenBtn" type="button">Открыть кейс — 60 ★</button>
 
       <div class="case-result" id="caseResult" hidden>
         <span class="case-result-badge" id="caseResultBadge">-5%</span>
@@ -387,7 +392,7 @@
 
       <button class="case-again-btn" id="caseAgainBtn" type="button" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 1 2.64 6.36"/><path d="M3 21v-6h6"/></svg>
-        <span>Открыть кейс ещё раз</span>
+        <span>Открыть кейс ещё раз — 60 ★</span>
       </button>
 
       <p class="case-status" id="caseStatus"></p>
