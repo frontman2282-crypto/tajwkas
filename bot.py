@@ -8,6 +8,16 @@
 2. Поднимает рядом aiohttp веб-сервер с маршрутами:
    - POST /create_invoice — дёргает script.js, чтобы получить ссылку
      на инвойс и открыть нативное окно оплаты через tg.openInvoice().
+   - POST /create_invoice_xrocket — то же самое, но оплата криптой через
+     xRocket Pay (USDT и т.п.) вместо звёзд Telegram; возвращает ссылку
+     на оплату и id счёта.
+   - POST /create_case_invoice_xrocket — открытие кейса за XROCKET_CASE_PRICE
+     в валюте xRocket (аналог /create_case_invoice, но криптой).
+   - POST /xrocket_webhook — сюда xRocket присылает уведомление об оплате
+     счёта (callbackUrl); по нему выдаётся товар/приз кейса.
+   - GET  /xrocket_invoice_status — фронтенд опрашивает эту ручку, ожидая
+     оплату счёта xRocket (полноценного колбэка вроде tg.openInvoice у
+     xRocket нет).
    - POST /create_case_invoice — создаёт инвойс на CASE_PRICE_STARS
      звёзд (кейс теперь платный) для открытия кейса.
    - POST /claim_case_reward — забирает приз кейса (одноразовый
@@ -52,11 +62,14 @@
 """
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import math
 import random
 import string
+import time
 
 import aiohttp
 from aiohttp import web
@@ -80,6 +93,40 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВСТАВЬ_СЮДА_ТОКЕН_БОТ
 WEBAPP_URL = os.environ.get("WEBAPP_URL", "https://твой-адрес.onrender.com")
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("PORT", 8080))  # Render подставит свой PORT сам
+
+# ====== xRocket Pay (оплата криптой прямо в мини-аппе) ======
+# API-ключ бери в @xRocket -> Pay -> App Settings -> Create App (или в
+# личном кабинете xRocket Pay). ВАЖНО: сюда идёт именно xRocket Pay API
+# ключ, а не токен обычного Telegram-бота.
+#
+# ВНИМАНИЕ: названия полей/эндпоинтов ниже (Rocket-Pay-Key, /tg-invoices,
+# формат вебхука и подписи) собраны по памяти без сверки с актуальной
+# документацией xRocket (по просьбе пользователя — без web-поиска). Если
+# запросы будут падать с ошибкой формата, свериться с официальной
+# документацией https://pay.xrocket.tg/api или ботом @xRocket и поправить
+# только xrocket_request()/create_invoice_xrocket_handler/
+# xrocket_webhook_handler — остальной код (хранилище, выдача покупки,
+# фронтенд) менять не придётся.
+XROCKET_API_KEY = os.environ.get("XROCKET_API_KEY", "")
+XROCKET_API_BASE = os.environ.get("XROCKET_API_BASE", "https://pay.xrocket.tg")
+XROCKET_CURRENCY = os.environ.get("XROCKET_CURRENCY", "USDT")
+
+# Секрет для проверки подписи вебхука. У xRocket подпись обычно совпадает
+# с самим API-ключом (или отдельным webhook-секретом из настроек приложения
+# — если у тебя такой есть, впиши его сюда через переменную окружения).
+XROCKET_WEBHOOK_SECRET = os.environ.get("XROCKET_WEBHOOK_SECRET", XROCKET_API_KEY)
+
+# Цены тарифов в валюте XROCKET_CURRENCY (по умолчанию USDT). Коды должны
+# совпадать с DURATIONS выше и с XROCKET_PRICES в script.js. Поменяй суммы
+# под свои цены.
+XROCKET_PRICES = {
+    "7d": 2.5,
+    "30d": 8.0,
+    "12m": 30.0,
+}
+
+# Цена платного открытия кейса в XROCKET_CURRENCY.
+XROCKET_CASE_PRICE = 0.8
 
 # ====== Админ ======
 # Единственный пользователь, которому доступна вкладка "Админ-панель" в
@@ -219,6 +266,39 @@ def _save_pending_case_rewards() -> None:
 
 
 PENDING_CASE_REWARDS: dict[str, dict] = _load_pending_case_rewards()
+
+
+# ====== Счета xRocket Pay (крипта) ======
+# Пока Telegram Stars подтверждает оплату через pre_checkout/successful_payment,
+# у xRocket другая модель: мы создаём счёт через их API, пользователь платит
+# на отдельной странице/в боте @xRocket, а xRocket сообщает нам об оплате
+# через вебхук POST /xrocket_webhook. Чтобы к этому моменту знать, ЧТО
+# именно купили (товар/срок/промокод) и КОМУ выдать доступ, сохраняем эти
+# данные тут сразу при создании счёта, ключ — id счёта (строка).
+#
+# Запись: {"kind": "product"|"case", "user_id": int|None,
+#          "product_id": str, "duration_code": str, "promo_field": str,
+#          "amount": float, "status": "pending"|"paid", "created": float}
+XROCKET_INVOICES_PATH = os.environ.get("XROCKET_INVOICES_PATH", "xrocket_invoices.json")
+
+
+def _load_xrocket_invoices() -> dict[str, dict]:
+    try:
+        with open(XROCKET_INVOICES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_xrocket_invoices() -> None:
+    try:
+        with open(XROCKET_INVOICES_PATH, "w", encoding="utf-8") as f:
+            json.dump(XROCKET_INVOICES, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", XROCKET_INVOICES_PATH)
+
+
+XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 
 
 # ====== Забаненные пользователи (админ-панель) ======
@@ -507,6 +587,128 @@ def apply_promo(base_price: int, promo_code: str | None) -> tuple[int, dict | No
     promo_meta = {**promo_meta, "discount_percent": discount_percent}
     return final_price, promo_meta
 
+
+def apply_promo_float(base_price: float, promo_code: str | None) -> tuple[float, dict | None]:
+    """То же самое, что apply_promo, но для цен в xRocket (USDT и т.п.),
+    где сумма не целое число звёзд, а дробная — округляем до центов
+    (2 знака), а не до целого."""
+    discount_percent, promo_meta = resolve_promo(promo_code)
+    if promo_meta is None:
+        return round(base_price, 2), None
+
+    final_price = max(0.01, round(base_price * (1 - discount_percent / 100), 2))
+    promo_meta = {**promo_meta, "discount_percent": discount_percent}
+    return final_price, promo_meta
+
+
+async def xrocket_request(method: str, path: str, json_body: dict | None = None) -> dict:
+    """Запрос к xRocket Pay API. Бросает исключение при ошибке — вызывающий
+    код должен ловить её и отвечать 502 клиенту.
+
+    ВНИМАНИЕ (см. комментарий у XROCKET_API_KEY выше): заголовок
+    "Rocket-Pay-Key" и базовый путь "/tg-invoices" указаны по памяти, без
+    сверки с документацией — если xRocket поменял название заголовка или
+    путь, поправь их здесь."""
+    url = f"{XROCKET_API_BASE.rstrip('/')}{path}"
+    headers = {
+        "Rocket-Pay-Key": XROCKET_API_KEY,
+        "Content-Type": "application/json",
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.request(method, url, headers=headers, json=json_body, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            text = await resp.text()
+            if resp.status >= 400:
+                raise RuntimeError(f"xRocket API {method} {path} -> {resp.status}: {text}")
+            try:
+                return json.loads(text)
+            except json.JSONDecodeError:
+                raise RuntimeError(f"xRocket API {method} {path}: не JSON-ответ: {text}")
+
+
+def verify_xrocket_signature(raw_body: bytes, signature: str | None) -> bool:
+    """Сверяет подпись вебхука xRocket. Формат подписи (HMAC-SHA256 от
+    сырого тела запроса, ключ — XROCKET_WEBHOOK_SECRET) указан по памяти —
+    если xRocket реально считает подпись иначе, эта проверка будет всегда
+    неуспешной и вебхуки будут отклоняться со статусом 403. В таком случае
+    сверься с документацией и поправь только эту функцию."""
+    if not signature or not XROCKET_WEBHOOK_SECRET:
+        return False
+    expected = hmac.new(
+        XROCKET_WEBHOOK_SECRET.encode("utf-8"), raw_body, hashlib.sha256
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature)
+
+
+async def grant_product_purchase(
+    user_id: int | None,
+    product_id: str,
+    duration_code: str,
+    promo_field: str,
+    amount_label: str,
+) -> None:
+    """Списывает использование промокода (если был) и уведомляет
+    пользователя о выдаче товара. Общая логика для оплаты звёздами
+    (successful_payment_handler) и оплаты через xRocket (xrocket_webhook_handler)."""
+    duration_label = DURATIONS.get(duration_code, {}).get("label", "")
+
+    if promo_field and ":" in promo_field:
+        promo_type, promo_key = promo_field.split(":", 1)
+        if promo_type == "case" and promo_key in GENERATED_PROMOS:
+            GENERATED_PROMOS[promo_key]["used"] = True
+            _save_generated_promos()
+        elif promo_type == "admin" and promo_key in ADMIN_PROMOS:
+            ADMIN_PROMOS[promo_key]["activations"] += 1
+            _save_admin_promos()
+
+    if user_id is None:
+        return
+
+    # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
+    duration_text = f" на срок «{duration_label}»" if duration_label else ""
+    try:
+        await bot.send_message(
+            user_id,
+            f"Оплата получена: {amount_label}\n"
+            f"Товар «{product_id}»{duration_text} выдан. Спасибо за покупку!",
+        )
+    except Exception:
+        logging.exception("Не удалось отправить сообщение о выдаче товара пользователю %s", user_id)
+
+
+async def grant_case_reward(user_id: int | None, amount_label: str) -> None:
+    """Крутит приз кейса, сохраняет промокод и кладёт его в
+    PENDING_CASE_REWARDS. Общая логика для оплаты звёздами и xRocket."""
+    if user_id is None:
+        return
+
+    discount_percent = roll_case_prize()
+    code = generate_case_code()
+    GENERATED_PROMOS[code.upper()] = {
+        "code": code,
+        "discount_percent": discount_percent,
+        "used": False,
+        "user_id": user_id,
+    }
+    _save_generated_promos()
+
+    PENDING_CASE_REWARDS[str(user_id)] = {
+        "code": code,
+        "discount_percent": discount_percent,
+    }
+    _save_pending_case_rewards()
+
+    try:
+        await bot.send_message(
+            user_id,
+            f"Оплата получена: {amount_label}\n"
+            f"Кейс открыт — выпал промокод «{code}» на скидку {discount_percent}%.\n"
+            f"Он уже должен появиться в мини-аппе, а также сохранён в "
+            f"«Профиль → Мои промокоды»."
+        )
+    except Exception:
+        logging.exception("Не удалось отправить сообщение о призе кейса пользователю %s", user_id)
+
+
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -558,53 +760,17 @@ async def successful_payment_handler(message: Message):
     # товару на срок, а "крутится" приз (см. roll_case_prize) и кладётся в
     # PENDING_CASE_REWARDS, откуда его тут же заберёт мини-апп через
     # POST /claim_case_reward.
+    amount_label = f"{payment.total_amount} ★"
+
     if product_id == "case_open":
-        discount_percent = roll_case_prize()
-        code = generate_case_code()
-        user_id = message.from_user.id
-        GENERATED_PROMOS[code.upper()] = {
-            "code": code,
-            "discount_percent": discount_percent,
-            "used": False,
-            "user_id": user_id,
-        }
-        _save_generated_promos()
-
-        PENDING_CASE_REWARDS[str(user_id)] = {
-            "code": code,
-            "discount_percent": discount_percent,
-        }
-        _save_pending_case_rewards()
-
-        await message.answer(
-            f"Оплата получена: {payment.total_amount} ★\n"
-            f"Кейс открыт — выпал промокод «{code}» на скидку {discount_percent}%.\n"
-            f"Он уже должен появиться в мини-аппе, а также сохранён в "
-            f"«Профиль → Мои промокоды»."
-        )
+        await grant_case_reward(message.from_user.id, amount_label)
         return
-
-    duration_label = DURATIONS.get(duration_code, {}).get("label", "")
 
     # promo_field теперь в формате "тип:ключ" (например "case:KICHIRO-A1B2C"
     # или "admin:SALE50"), либо пустой, если промокод не применялся или был
     # статическим. Списываем использование только теперь, когда оплата
     # реально прошла (а не просто была создана ссылка на инвойс).
-    if promo_field and ":" in promo_field:
-        promo_type, promo_key = promo_field.split(":", 1)
-        if promo_type == "case" and promo_key in GENERATED_PROMOS:
-            GENERATED_PROMOS[promo_key]["used"] = True
-            _save_generated_promos()
-        elif promo_type == "admin" and promo_key in ADMIN_PROMOS:
-            ADMIN_PROMOS[promo_key]["activations"] += 1
-            _save_admin_promos()
-
-    # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
-    duration_text = f" на срок «{duration_label}»" if duration_label else ""
-    await message.answer(
-        f"Оплата получена: {payment.total_amount} ★\n"
-        f"Товар «{product_id}»{duration_text} выдан. Спасибо за покупку!"
-    )
+    await grant_product_purchase(message.from_user.id, product_id, duration_code, promo_field, amount_label)
 
 
 # ====== HTTP-эндпоинт для мини-аппа ======
@@ -677,6 +843,225 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         "promo_invalid": promo_invalid,
         "discount_percent": promo["discount_percent"] if promo_applied else 0,
     })
+
+
+# ====== xRocket Pay: покупка товара ======
+
+async def create_invoice_xrocket_handler(request: web.Request) -> web.Response:
+    """Создаёт счёт в xRocket Pay на покупку товара (аналог
+    create_invoice_handler, но для оплаты криптой вместо звёзд).
+
+    Оплата подтверждается асинхронно через POST /xrocket_webhook, поэтому
+    тут же сохраняем в XROCKET_INVOICES, что именно куплено и кем, — по
+    id счёта из ответа xRocket."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+
+    product_id = data.get("product_id")
+    duration_code = data.get("duration", "30d")
+    promo_code_raw = data.get("promo_code")
+
+    user_id, ban_username = resolve_user(data.get("init_data"))
+    if is_banned_and_backfill(user_id, ban_username):
+        return web.json_response({"error": "banned"}, status=403)
+    if user_id is None:
+        return web.json_response({"error": "no init_data"}, status=400)
+
+    product = PRODUCTS.get(product_id)
+    duration = DURATIONS.get(duration_code)
+    base_price = XROCKET_PRICES.get(duration_code)
+
+    if not product:
+        return web.json_response({"error": "unknown product"}, status=404)
+    if not duration or base_price is None:
+        return web.json_response({"error": "unknown duration"}, status=404)
+
+    final_price, promo = apply_promo_float(base_price, promo_code_raw)
+    promo_applied = promo is not None
+    promo_invalid = bool(promo_code_raw) and not promo_applied
+
+    promo_field = ""
+    if promo_applied and promo.get("type") in ("case", "admin"):
+        promo_field = f"{promo['type']}:{promo['key']}"
+
+    title = product["title"]
+    description = f"{product['description']} — доступ на {duration['label']}"
+    if promo_applied:
+        description += f" (промокод -{promo['discount_percent']}%)"
+
+    try:
+        result = await xrocket_request(
+            "POST",
+            "/tg-invoices",
+            {
+                "amount": final_price,
+                "currency": XROCKET_CURRENCY,
+                "description": description,
+                "payload": f"{product_id}:{duration_code}",
+                "callbackUrl": f"{WEBAPP_URL.rstrip('/')}/xrocket_webhook",
+                "commentsEnabled": False,
+                "expiredIn": 1800,  # 30 минут на оплату счёта
+            },
+        )
+    except Exception:
+        logging.exception("Не удалось создать счёт xRocket")
+        return web.json_response({"error": "xrocket_unavailable"}, status=502)
+
+    invoice_data = result.get("data", result)
+    invoice_id = str(invoice_data.get("id"))
+    invoice_link = invoice_data.get("link")
+
+    if not invoice_id or not invoice_link:
+        logging.error("Неожиданный ответ xRocket при создании счёта: %s", result)
+        return web.json_response({"error": "xrocket_bad_response"}, status=502)
+
+    XROCKET_INVOICES[invoice_id] = {
+        "kind": "product",
+        "user_id": user_id,
+        "product_id": product_id,
+        "duration_code": duration_code,
+        "promo_field": promo_field,
+        "amount": final_price,
+        "status": "pending",
+        "created": time.time(),
+    }
+    _save_xrocket_invoices()
+
+    return web.json_response({
+        "invoice_id": invoice_id,
+        "invoice_link": invoice_link,
+        "base_price": base_price,
+        "final_price": final_price,
+        "promo_applied": promo_applied,
+        "promo_invalid": promo_invalid,
+        "discount_percent": promo["discount_percent"] if promo_applied else 0,
+        "currency": XROCKET_CURRENCY,
+    })
+
+
+async def create_case_invoice_xrocket_handler(request: web.Request) -> web.Response:
+    """Аналог create_case_invoice_handler, но открытие кейса оплачивается
+    через xRocket Pay вместо звёзд."""
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "bad json"}, status=400)
+
+    user_id, ban_username = resolve_user(data.get("init_data"))
+    if is_banned_and_backfill(user_id, ban_username):
+        return web.json_response({"error": "banned"}, status=403)
+    if user_id is None:
+        return web.json_response({"error": "no init_data"}, status=400)
+
+    try:
+        result = await xrocket_request(
+            "POST",
+            "/tg-invoices",
+            {
+                "amount": XROCKET_CASE_PRICE,
+                "currency": XROCKET_CURRENCY,
+                "description": "Открытие кейса — случайный промокод на скидку от 3% до 50%.",
+                "payload": "case_open",
+                "callbackUrl": f"{WEBAPP_URL.rstrip('/')}/xrocket_webhook",
+                "commentsEnabled": False,
+                "expiredIn": 1800,
+            },
+        )
+    except Exception:
+        logging.exception("Не удалось создать счёт xRocket для кейса")
+        return web.json_response({"error": "xrocket_unavailable"}, status=502)
+
+    invoice_data = result.get("data", result)
+    invoice_id = str(invoice_data.get("id"))
+    invoice_link = invoice_data.get("link")
+
+    if not invoice_id or not invoice_link:
+        logging.error("Неожиданный ответ xRocket при создании счёта кейса: %s", result)
+        return web.json_response({"error": "xrocket_bad_response"}, status=502)
+
+    XROCKET_INVOICES[invoice_id] = {
+        "kind": "case",
+        "user_id": user_id,
+        "product_id": "",
+        "duration_code": "",
+        "promo_field": "",
+        "amount": XROCKET_CASE_PRICE,
+        "status": "pending",
+        "created": time.time(),
+    }
+    _save_xrocket_invoices()
+
+    return web.json_response({
+        "invoice_id": invoice_id,
+        "invoice_link": invoice_link,
+        "price": XROCKET_CASE_PRICE,
+        "currency": XROCKET_CURRENCY,
+    })
+
+
+async def xrocket_webhook_handler(request: web.Request) -> web.Response:
+    """Принимает уведомление об оплате от xRocket Pay (callbackUrl).
+
+    ВНИМАНИЕ: точный формат тела вебхука ("invoiceId"/"status" и т.п.) и
+    заголовок подписи собраны по памяти — см. комментарий у
+    verify_xrocket_signature. Если xRocket шлёт другие имена полей, здесь
+    достаточно поправить извлечение invoice_id/status ниже."""
+    raw_body = await request.read()
+    signature = request.headers.get("Rocket-Pay-Signature") or request.headers.get("X-Signature")
+
+    if not verify_xrocket_signature(raw_body, signature):
+        logging.warning("xRocket webhook: неверная или отсутствующая подпись")
+        return web.json_response({"error": "bad signature"}, status=403)
+
+    try:
+        body = json.loads(raw_body)
+    except json.JSONDecodeError:
+        return web.json_response({"error": "bad json"}, status=400)
+
+    payload_data = body.get("data", body)
+    invoice_id = str(payload_data.get("id") or payload_data.get("invoiceId") or "")
+    status = str(payload_data.get("status") or payload_data.get("paymentStatus") or "").lower()
+
+    entry = XROCKET_INVOICES.get(invoice_id)
+    if entry is None:
+        logging.warning("xRocket webhook: неизвестный счёт %s", invoice_id)
+        return web.json_response({"ok": True})  # отвечаем 200, чтобы xRocket не повторял бесконечно
+
+    if entry["status"] == "paid":
+        return web.json_response({"ok": True})  # уже обработан — не выдаём повторно
+
+    if status not in ("paid", "success", "completed"):
+        return web.json_response({"ok": True})
+
+    entry["status"] = "paid"
+    _save_xrocket_invoices()
+
+    amount_label = f"{entry['amount']} {XROCKET_CURRENCY}"
+    user_id = entry.get("user_id")
+
+    if entry["kind"] == "case":
+        await grant_case_reward(user_id, amount_label)
+    else:
+        await grant_product_purchase(
+            user_id, entry["product_id"], entry["duration_code"], entry["promo_field"], amount_label
+        )
+
+    return web.json_response({"ok": True})
+
+
+async def xrocket_invoice_status_handler(request: web.Request) -> web.Response:
+    """Опрашивается фронтендом (мини-аппом), пока открыта страница оплаты
+    xRocket — так же, как tg.openInvoice даёт колбэк для звёзд. Основной
+    источник истины — вебхук выше; эта ручка просто отдаёт, что уже
+    записано в XROCKET_INVOICES."""
+    invoice_id = request.query.get("invoice_id", "")
+    entry = XROCKET_INVOICES.get(invoice_id)
+    if entry is None:
+        return web.json_response({"error": "not found"}, status=404)
+
+    return web.json_response({"status": entry["status"]})
 
 
 async def open_case_handler(request: web.Request) -> web.Response:
@@ -1187,6 +1572,10 @@ async def no_cache_static_middleware(request: web.Request, handler):
 def build_web_app() -> web.Application:
     app = web.Application(middlewares=[no_cache_static_middleware])
     app.router.add_post("/create_invoice", create_invoice_handler)
+    app.router.add_post("/create_invoice_xrocket", create_invoice_xrocket_handler)
+    app.router.add_post("/create_case_invoice_xrocket", create_case_invoice_xrocket_handler)
+    app.router.add_post("/xrocket_webhook", xrocket_webhook_handler)
+    app.router.add_get("/xrocket_invoice_status", xrocket_invoice_status_handler)
     app.router.add_post("/open_case", open_case_handler)
     app.router.add_post("/create_case_invoice", create_case_invoice_handler)
     app.router.add_post("/claim_case_reward", claim_case_reward_handler)
