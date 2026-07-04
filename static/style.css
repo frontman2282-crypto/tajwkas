@@ -240,8 +240,8 @@ body.keyboard-open .tabbar {
 }
 
 /* Сама бренд-марка: тёмный графитовый градиент вместо плоского белого
-   кружка, с гербом-щитом и звездой внутри (без буквы), перекликается
-   с иконкой товара в каталоге */
+   кружка, с иконкой лавки внутри — перекликается с иконкой вкладки
+   "Магазин" в нижней навигации */
 .splash-circle {
   position: absolute;
   inset: 10px;
@@ -261,7 +261,6 @@ body.keyboard-open .tabbar {
   width: 34px;
   height: 34px;
   filter: drop-shadow(0 0 6px rgba(230, 230, 236, 0.35));
-  animation: splash-glyph-glow 2.2s ease-in-out infinite;
 }
 
 /* Вращающийся ободок-спиннер поверх кружка — создаёт ощущение "грузится" */
@@ -355,11 +354,6 @@ body.keyboard-open .tabbar {
 @keyframes splash-progress-slide {
   0% { transform: translateX(-120%); }
   100% { transform: translateX(280%); }
-}
-
-@keyframes splash-glyph-glow {
-  0%, 100% { filter: drop-shadow(0 0 6px rgba(230, 230, 236, 0.35)); }
-  50% { filter: drop-shadow(0 0 11px rgba(255, 255, 255, 0.65)); }
 }
 
 @keyframes splash-pulse {
