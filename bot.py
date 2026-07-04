@@ -120,9 +120,9 @@ XROCKET_WEBHOOK_SECRET = os.environ.get("XROCKET_WEBHOOK_SECRET", XROCKET_API_KE
 # совпадать с DURATIONS выше и с XROCKET_PRICES в script.js. Поменяй суммы
 # под свои цены.
 XROCKET_PRICES = {
-    "7d": 2.5,
-    "30d": 8.0,
-    "12m": 30.0,
+    "7d": 7.0,
+    "30d": 10.0,
+    "12m": 50.0,
 }
 
 # Цена платного открытия кейса в XROCKET_CURRENCY.
@@ -165,9 +165,9 @@ PRODUCTS = {
 # Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
 # именно они прилетают в payload инвойса и в successful_payment.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 220},
-    "30d": {"label": "30 дней", "price": 750},
-    "12m": {"label": "12 месяцев", "price": 2820},
+    "7d": {"label": "7 дней", "price": 370},
+    "30d": {"label": "30 дней", "price": 500},
+    "12m": {"label": "12 месяцев", "price": 3000},
 }
 
 # ====== Промокоды ======
