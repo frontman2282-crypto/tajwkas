@@ -1531,9 +1531,9 @@ const CASE_REEL_DECOYS_BEFORE = 28;
 const CASE_REEL_DECOYS_AFTER = 6;
 const CASE_SPIN_DURATION_MS = 3200;
 
-// Кейс снова бесплатный — открывается сразу через POST /open_case, без
-// оплаты звёздами (см. CASE_IS_FREE в bot.py).
-const CASE_OPEN_BTN_LABEL = `Открыть кейс`;
+// Кейс снова платный — цена должна совпадать с CASE_PRICE_STARS в bot.py.
+const CASE_PRICE_STARS = 60;
+const CASE_OPEN_BTN_LABEL = `Открыть кейс — 60 ${STAR_ICON_SVG}`;
 
 // Сколько раз и с каким интервалом опрашивать /claim_case_reward после
 // того, как Telegram сообщил статус оплаты "paid" — реальный приз
@@ -1707,79 +1707,99 @@ async function openCase() {
   }
 
   caseOpenBtn.disabled = true;
-  caseOpenBtn.textContent = "Открываем кейс...";
+  caseOpenBtn.textContent = "Открываем оплату...";
   setCaseStatus("");
 
-  // Кейс бесплатный — приз выдаётся сразу одним запросом, без оплаты.
-  let reward;
+  let invoiceLink;
   try {
-    const response = await fetch("/open_case", {
+    const response = await fetch("/create_case_invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ init_data: tg.initData }),
     });
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось открыть кейс");
+      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось создать оплату");
     }
-    reward = await response.json();
+    const data = await response.json();
+    invoiceLink = data.invoice_link;
   } catch (err) {
     caseOpenBtn.disabled = false;
     caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
+    setCaseStatus(err.message || "Не удалось открыть оплату, попробуй ещё раз", "error");
     return;
   }
 
-  caseOpenBtn.hidden = true;
-  caseResult.hidden = true;
-  caseAgainBtn.hidden = true;
-  setCaseStatus("Крутим кейс...");
-  caseStage.classList.add("case-stage--spinning");
-  caseReelWrap.hidden = false;
+  tg.openInvoice(invoiceLink, async (status) => {
+    if (status !== "paid") {
+      caseOpenBtn.disabled = false;
+      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+      if (status === "cancelled") {
+        setCaseStatus("Оплата отменена");
+      } else if (status === "failed") {
+        setCaseStatus("Оплата не прошла", "error");
+      } else {
+        setCaseStatus("Статус: " + status);
+      }
+      return;
+    }
 
-  try {
-    spinReelTo(reward.discount_percent);
-    tg?.HapticFeedback?.selectionChanged();
+    caseOpenBtn.hidden = true;
+    caseResult.hidden = true;
+    caseAgainBtn.hidden = true;
+    setCaseStatus("Оплата прошла, крутим кейс...");
+    caseStage.classList.add("case-stage--spinning");
+    caseReelWrap.hidden = false;
 
-    // Ждём, пока рулетка реально докрутится до приза, и только потом
-    // показываем карточку результата — иначе она появится раньше, чем
-    // прокрутка остановится, и будет выглядеть рассинхронизированно.
-    await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
+    try {
+      const reward = await pollCaseReward();
+      if (!reward) {
+        throw new Error("Оплата прошла, но приз пока не пришёл — открой «Мои промокоды» через минуту");
+      }
 
-    caseResultBadge.textContent = `-${reward.discount_percent}%`;
-    caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
-    caseResultCode.textContent = reward.code;
+      spinReelTo(reward.discount_percent);
+      tg?.HapticFeedback?.selectionChanged();
 
-    caseCopyBtn.textContent = "Скопировать";
-    caseCopyBtn.classList.remove("case-copy-btn--copied");
+      // Ждём, пока рулетка реально докрутится до приза, и только потом
+      // показываем карточку результата — иначе она появится раньше, чем
+      // прокрутка остановится, и будет выглядеть рассинхронизированно.
+      await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
 
-    caseResult.hidden = false;
-    caseResult.style.animation = "none";
-    // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
-    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    caseResult.style.animation = "";
-    caseAgainBtn.hidden = false;
+      caseResultBadge.textContent = `-${reward.discount_percent}%`;
+      caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
+      caseResultCode.textContent = reward.code;
 
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseStage.classList.add("case-stage--opened");
+      caseCopyBtn.textContent = "Скопировать";
+      caseCopyBtn.classList.remove("case-copy-btn--copied");
 
-    setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
+      caseResult.hidden = false;
+      caseResult.style.animation = "none";
+      // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      caseResult.style.animation = "";
+      caseAgainBtn.hidden = false;
 
-    // Мини-меню с промокодом поверх экрана — появляется сразу после того,
-    // как кнопка "Открыть кейс ещё раз" уже видна.
-    showCasePrizeModal(reward.discount_percent, reward.code);
-  } catch (err) {
-    caseReelWrap.hidden = true;
-    caseStage.classList.remove("case-stage--spinning");
-    caseOpenBtn.hidden = false;
-    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    caseOpenBtn.disabled = false;
-    caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-  }
+      caseReelWrap.hidden = true;
+      caseStage.classList.remove("case-stage--spinning");
+      caseStage.classList.add("case-stage--opened");
+
+      setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
+      tg?.HapticFeedback?.notificationOccurred("success");
+
+      // Мини-меню с промокодом поверх экрана — появляется сразу после того,
+      // как кнопка "Открыть кейс ещё раз" уже видна.
+      showCasePrizeModal(reward.discount_percent, reward.code);
+    } catch (err) {
+      caseReelWrap.hidden = true;
+      caseStage.classList.remove("case-stage--spinning");
+      caseOpenBtn.hidden = false;
+      setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
+      tg?.HapticFeedback?.notificationOccurred("error");
+    } finally {
+      caseOpenBtn.disabled = false;
+      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+    }
+  });
 }
 
 caseEntryCard.addEventListener("click", () => {
