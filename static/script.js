@@ -32,6 +32,12 @@ const RU_CARD_PRICES = { "7d": 350, "30d": 1200, "12m": 4500 };
 // так же вручную, перепиской с владельцем в личных сообщениях.
 const UAH_CARD_PRICES = { "7d": 200, "30d": 600, "12m": 2300 };
 
+// Цены в USDT при оплате способом "xRocket" (крипта, оплата автоматическая
+// — как и Stars, без переписки с владельцем). Должны совпадать с
+// XROCKET_PRICES в bot.py.
+const XROCKET_PRICES = { "7d": 2.5, "30d": 8, "12m": 30 };
+const XROCKET_CURRENCY = "USDT";
+
 // Промокод проверяется и считается всегда на сервере (в bot.py) — это
 // касается и статических кодов, и одноразовых кодов из кейса, клиенту в
 // этом вопросе не доверяем.
@@ -220,24 +226,41 @@ function getFinalPrice(basePrice, discountPercent) {
   return Math.max(1, Math.floor(basePrice * (1 - discountPercent / 100)));
 }
 
+// Считает итоговую цену с округлением до центов (2 знака) — так же, как
+// apply_promo_float на сервере (bot.py) для xRocket, чтобы цена на экране
+// совпадала с той, что реально спишется в USDT.
+function getFinalPriceFloat(basePrice, discountPercent) {
+  if (!discountPercent) return Math.round(basePrice * 100) / 100;
+  return Math.max(0.01, Math.round(basePrice * (1 - discountPercent / 100) * 100) / 100);
+}
+
 function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-  const finalPrice = getFinalPrice(duration.price, checkoutDiscountPercent);
-  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < duration.price;
+
+  // Кнопка "Купить" (checkoutBuyBtn) используется и для Stars, и для
+  // xRocket — оба способа автоматические (в отличие от NFT/card/uah,
+  // которые оформляются перепиской через checkoutManualBtn).
+  const isXRocket = checkoutPaymentMethod === "xrocket";
+  const basePrice = isXRocket ? XROCKET_PRICES[duration.code] : duration.price;
+  const unit = isXRocket ? XROCKET_CURRENCY : STAR_ICON_SVG;
+  const finalPrice = isXRocket
+    ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
+    : getFinalPrice(basePrice, checkoutDiscountPercent);
+  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
 
   // Зачёркнутая исходная цена показывается прямо на кнопке "Купить" рядом
   // с новой ценой со скидкой — работает для любого процента скидки
   // (в т.ч. 5%), т.к. итоговая цена всегда считается на сервере (floor).
   if (hasDiscount) {
-    checkoutOldPrice.innerHTML = `${duration.price} ${STAR_ICON_SVG}`;
+    checkoutOldPrice.innerHTML = `${basePrice} ${unit}`;
     checkoutOldPrice.hidden = false;
   } else {
     checkoutOldPrice.hidden = true;
   }
 
   buyBtnText.innerHTML = hasDiscount
-    ? `Купить за ${finalPrice} ${STAR_ICON_SVG}`
-    : `Купить за ${duration.price} ${STAR_ICON_SVG}`;
+    ? `Купить за ${finalPrice} ${unit}`
+    : `Купить за ${basePrice} ${unit}`;
 }
 
 // Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
@@ -259,11 +282,14 @@ function applyDurationPrice(priceEl, duration) {
 
   const isCard = checkoutPaymentMethod === "card";
   const isUah = checkoutPaymentMethod === "uah";
+  const isXRocket = checkoutPaymentMethod === "xrocket";
   const basePrice = isCard
     ? RU_CARD_PRICES[duration.code]
     : isUah
       ? UAH_CARD_PRICES[duration.code]
-      : duration.price;
+      : isXRocket
+        ? XROCKET_PRICES[duration.code]
+        : duration.price;
 
   if (basePrice == null) {
     priceEl.classList.remove("duration-option-price--discounted");
@@ -271,8 +297,10 @@ function applyDurationPrice(priceEl, duration) {
     return;
   }
 
-  const unit = isCard ? "₽" : isUah ? "₴" : STAR_ICON_SVG;
-  const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
+  const unit = isCard ? "₽" : isUah ? "₴" : isXRocket ? XROCKET_CURRENCY : STAR_ICON_SVG;
+  const finalPrice = isXRocket
+    ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
+    : getFinalPrice(basePrice, checkoutDiscountPercent);
   const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
 
   if (hasDiscount) {
@@ -333,10 +361,132 @@ async function getInvoiceLink(productId, durationCode, promoCode) {
   return data;
 }
 
+// ====== xRocket Pay (крипта) ======
+// В отличие от Stars, у xRocket нет встроенного в Telegram колбэка вроде
+// tg.openInvoice — ссылка на оплату открывается как обычная веб-страница
+// (или чат с ботом @xRocket), а результат оплаты бот получает отдельно,
+// через вебхук на сервере (см. /xrocket_webhook в bot.py). Поэтому здесь
+// после открытия ссылки просто опрашиваем сервер, пока статус счёта не
+// станет "paid" (или пока не истечёт время ожидания).
+
+async function getXRocketInvoice(productId, durationCode, promoCode) {
+  const initData = tg ? tg.initData : "";
+
+  const response = await fetch("/create_invoice_xrocket", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      product_id: productId,
+      duration: durationCode,
+      promo_code: promoCode || undefined,
+      init_data: initData,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Сервер не смог создать счёт xRocket");
+  }
+
+  const data = await response.json();
+  if (!data.invoice_link || !data.invoice_id) {
+    throw new Error("Сервер не вернул ссылку на оплату xRocket");
+  }
+
+  return data;
+}
+
+// Опрашивает статус счёта xRocket раз в 2.5с. Останавливается, когда счёт
+// оплачен, когда истёк таймаут (по умолчанию 10 минут — счёт живёт 30 мин
+// на сервере, но незачем держать пользователя на экране дольше) или когда
+// вызвали cancel() (например, ушли с экрана оформления).
+function pollXRocketInvoice(invoiceId, { intervalMs = 2500, timeoutMs = 10 * 60 * 1000 } = {}) {
+  let cancelled = false;
+  const startedAt = Date.now();
+
+  const promise = new Promise((resolve) => {
+    const tick = async () => {
+      if (cancelled) return resolve("cancelled");
+      if (Date.now() - startedAt > timeoutMs) return resolve("timeout");
+
+      try {
+        const res = await fetch(`/xrocket_invoice_status?invoice_id=${encodeURIComponent(invoiceId)}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === "paid") return resolve("paid");
+        }
+      } catch (err) {
+        // сетевая ошибка — просто попробуем ещё раз на следующем тике
+      }
+
+      setTimeout(tick, intervalMs);
+    };
+
+    tick();
+  });
+
+  return { promise, cancel: () => { cancelled = true; } };
+}
+
+async function handleBuyXRocket(product, durationCode, buyBtn, buyBtnText, statusEl) {
+  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
+
+  buyBtn.disabled = true;
+  buyBtnText.textContent = "Открываем оплату...";
+  setCardStatus(statusEl, "");
+
+  try {
+    const invoiceData = await getXRocketInvoice(product.id, durationCode, checkoutPromoCode);
+
+    if (checkoutPromoCode && invoiceData.promo_invalid) {
+      checkoutPromoCode = null;
+      checkoutDiscountPercent = 0;
+      checkoutPromoApply.textContent = "Применить";
+      checkoutPromoApply.classList.remove("promo-apply-btn--applied");
+      checkoutPromoInput.disabled = false;
+      checkoutPromoInput.value = "";
+      setPromoStatus("Промокод не найден или уже использован, покупка по полной цене", "error");
+    }
+
+    // Открываем ссылку на оплату: tg.openLink — обычная внешняя страница/чат
+    // с ботом @xRocket, а не нативный инвойс Telegram (в отличие от Stars).
+    if (tg?.openLink) {
+      tg.openLink(invoiceData.invoice_link, { try_instant_view: false });
+    } else {
+      window.open(invoiceData.invoice_link, "_blank");
+    }
+
+    setCardStatus(statusEl, "Ждём оплату в xRocket...");
+    buyBtnText.textContent = "Ожидание оплаты...";
+
+    const { promise } = pollXRocketInvoice(invoiceData.invoice_id);
+    const result = await promise;
+
+    buyBtn.disabled = false;
+    refreshAllPrices();
+
+    if (result === "paid") {
+      setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
+      tg?.HapticFeedback?.notificationOccurred("success");
+    } else if (result === "timeout") {
+      setCardStatus(statusEl, "Время ожидания оплаты истекло. Если оплатили — доступ придёт от бота отдельным сообщением.");
+    } else {
+      setCardStatus(statusEl, "Ожидание оплаты отменено");
+    }
+  } catch (err) {
+    buyBtn.disabled = false;
+    refreshAllPrices();
+    setCardStatus(statusEl, err.message || "Ошибка при создании оплаты xRocket", "error");
+  }
+}
+
 async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
   if (!tg) {
     setCardStatus(statusEl, "Открой это приложение внутри Telegram", "error");
     return;
+  }
+
+  if (checkoutPaymentMethod === "xrocket") {
+    return handleBuyXRocket(product, durationCode, buyBtn, buyBtnText, statusEl);
   }
 
   const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
