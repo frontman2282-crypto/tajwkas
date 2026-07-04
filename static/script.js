@@ -18,25 +18,27 @@ const PRODUCTS = [
 // Цены указаны в звёздах (Telegram Stars) — поменяй значения price
 // на свои под каждый тариф.
 const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 220 },
-  { code: "30d", label: "30 дней", price: 750 },
-  { code: "12m", label: "12 месяцев", price: 2820 },
+  { code: "7d", label: "7 дней", price: 370 },
+  { code: "30d", label: "30 дней", price: 500 },
+  { code: "12m", label: "12 месяцев", price: 3000 },
 ];
 
 // Цены в рублях при оплате способом "RU карта" — оформляется вручную
 // через личные сообщения с владельцем, поэтому цены задаются отдельно
 // от цен в Telegram Stars.
-const RU_CARD_PRICES = { "7d": 350, "30d": 1200, "12m": 4500 };
+const RU_CARD_PRICES = { "7d": 550, "30d": 750, "12m": 4500 };
 
 // Цены в гривнах при оплате способом "UAH (Гривна)" — оформляется точно
 // так же вручную, перепиской с владельцем в личных сообщениях.
-const UAH_CARD_PRICES = { "7d": 200, "30d": 600, "12m": 2300 };
+const UAH_CARD_PRICES = { "7d": 320, "30d": 430, "12m": 2600 };
 
 // Цены в USDT при оплате способом "xRocket" (крипта, оплата автоматическая
 // — как и Stars, без переписки с владельцем). Должны совпадать с
-// XROCKET_PRICES в bot.py.
-const XROCKET_PRICES = { "7d": 2.5, "30d": 8, "12m": 30 };
-const XROCKET_CURRENCY = "USDT";
+// XROCKET_PRICES в bot.py. Реальная валюта инвойса на стороне xRocket
+// остаётся USDT (см. XROCKET_CURRENCY в bot.py) — здесь меняется только
+// то, что видит пользователь в интерфейсе (символ доллара вместо "USDT").
+const XROCKET_PRICES = { "7d": 7, "30d": 10, "12m": 50 };
+const XROCKET_CURRENCY = "$";
 
 // Промокод проверяется и считается всегда на сервере (в bot.py) — это
 // касается и статических кодов, и одноразовых кодов из кейса, клиенту в
@@ -234,6 +236,14 @@ function getFinalPriceFloat(basePrice, discountPercent) {
   return Math.max(0.01, Math.round(basePrice * (1 - discountPercent / 100) * 100) / 100);
 }
 
+// Форматирует сумму для отображения: для xRocket знак доллара ставится
+// перед числом без пробела ("$7"), для остальных способов (Stars/₽/₴)
+// используется прежний порядок "число + значок/символ".
+function formatAmount(amount, isXRocket) {
+  if (isXRocket) return `${XROCKET_CURRENCY}${amount}`;
+  return `${amount} ${STAR_ICON_SVG}`;
+}
+
 function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
 
@@ -242,7 +252,6 @@ function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   // которые оформляются перепиской через checkoutManualBtn).
   const isXRocket = checkoutPaymentMethod === "xrocket";
   const basePrice = isXRocket ? XROCKET_PRICES[duration.code] : duration.price;
-  const unit = isXRocket ? XROCKET_CURRENCY : STAR_ICON_SVG;
   const finalPrice = isXRocket
     ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
     : getFinalPrice(basePrice, checkoutDiscountPercent);
@@ -252,15 +261,15 @@ function updateBuyButtonLabel(buyBtnText, product, durationCode) {
   // с новой ценой со скидкой — работает для любого процента скидки
   // (в т.ч. 5%), т.к. итоговая цена всегда считается на сервере (floor).
   if (hasDiscount) {
-    checkoutOldPrice.innerHTML = `${basePrice} ${unit}`;
+    checkoutOldPrice.innerHTML = formatAmount(basePrice, isXRocket);
     checkoutOldPrice.hidden = false;
   } else {
     checkoutOldPrice.hidden = true;
   }
 
   buyBtnText.innerHTML = hasDiscount
-    ? `Купить за ${finalPrice} ${unit}`
-    : `Купить за ${basePrice} ${unit}`;
+    ? `Купить за ${formatAmount(finalPrice, isXRocket)}`
+    : `Купить за ${formatAmount(basePrice, isXRocket)}`;
 }
 
 // Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
@@ -297,20 +306,26 @@ function applyDurationPrice(priceEl, duration) {
     return;
   }
 
-  const unit = isCard ? "₽" : isUah ? "₴" : isXRocket ? XROCKET_CURRENCY : STAR_ICON_SVG;
   const finalPrice = isXRocket
     ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
     : getFinalPrice(basePrice, checkoutDiscountPercent);
   const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
 
+  const format = (value) => {
+    if (isCard) return `${value} ₽`;
+    if (isUah) return `${value} ₴`;
+    if (isXRocket) return formatAmount(value, true);
+    return `${value} ${STAR_ICON_SVG}`;
+  };
+
   if (hasDiscount) {
     priceEl.classList.add("duration-option-price--discounted");
     priceEl.innerHTML =
-      `<span class="duration-option-price-old">${basePrice} ${unit}</span>` +
-      `<span class="duration-option-price-new">${finalPrice} ${unit}</span>`;
+      `<span class="duration-option-price-old">${format(basePrice)}</span>` +
+      `<span class="duration-option-price-new">${format(finalPrice)}</span>`;
   } else {
     priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.innerHTML = `${basePrice} ${unit}`;
+    priceEl.innerHTML = format(basePrice);
   }
 }
 
