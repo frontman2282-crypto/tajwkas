@@ -39,6 +39,12 @@
    - POST /admin/promo/create, /admin/promo/delete, /admin/promo/list —
      управление многоразовыми промокодами из админ-панели (доступно
      владельцу и назначенным админам).
+   - POST /admin/user_promo_codes — по username или id пользователя
+     отдаёт все его одноразовые кейсовые промокоды (в т.ч. уже
+     использованные), доступно владельцу и назначенным админам.
+   - POST /admin/user_promo_delete — удаляет ЛЮБОЙ (чужой) одноразовый
+     кейсовый промокод по его коду, независимо от владельца и статуса
+     "использован" — доступно владельцу и назначенным админам.
    - POST /admin/whoami — права текущего пользователя (is_admin/is_owner).
    - POST /admin/admins/list, /admin/admins/add, /admin/admins/remove —
      назначение и снятие админов (только для владельцев — ADMIN_ID и
@@ -197,10 +203,12 @@ CASE_PRIZES = [
     (50, 1),
 ]
 
-# Кейс платный: открыть его можно за CASE_PRICE_STARS звёзд Telegram
-# Stars (оплата — обычный инвойс, как и при покупке товара, см.
-# create_case_invoice_handler и successful_payment_handler).
-CASE_IS_FREE = False
+# Кейс бесплатный: открывается сразу через POST /open_case, без создания
+# инвойса и оплаты звёздами. CASE_PRICE_STARS оставлен в коде только как
+# память о прежней цене (на случай, если платность понадобится вернуть —
+# для этого достаточно поставить CASE_IS_FREE = False, фронтенд тогда
+# нужно будет переключить обратно на /create_case_invoice).
+CASE_IS_FREE = True
 CASE_PRICE_STARS = 60
 
 # Хранилище сгенерированных кейсом промокодов: КОД (в верхнем регистре) ->
@@ -380,6 +388,17 @@ def _parse_ban_target(raw: str) -> tuple[int | None, str | None]:
     return None, target.lower() if target else None
 
 
+def _resolve_target_user(raw: str) -> tuple[int | None, str | None]:
+    """Как _parse_ban_target, но если ввели username, а не id, дополнительно
+    пытается найти реальный user_id через USER_DIRECTORY — это нужно,
+    чтобы искать промокоды пользователя по username (сами промокоды в
+    GENERATED_PROMOS привязаны только к id)."""
+    target_id, target_username = _parse_ban_target(raw)
+    if target_id is None and target_username:
+        target_id = find_user_id_by_username(target_username)
+    return target_id, target_username
+
+
 # ====== Дополнительные админы (назначаются владельцем из панели) ======
 # ADMIN_ID — единственный "владелец", он всегда админ и только он может
 # назначать/снимать остальных админов. Остальные админы из этого списка
@@ -454,6 +473,66 @@ def _save_admin_promos() -> None:
 ADMIN_PROMOS: dict[str, dict] = _load_admin_promos()
 
 
+# ====== Справочник "id <-> username" ======
+# GENERATED_PROMOS хранит только user_id, а не username, поэтому чтобы
+# админ мог найти промокоды пользователя по username (а не только по id),
+# нужно где-то сопоставлять id и username. Это хранилище заполняется
+# автоматически (см. remember_user) при каждом запросе с валидным
+# подписанным initData — то есть практически при любом открытии мини-аппа.
+# Ключ — id пользователя (строкой), значение — {"user_id": int, "username":
+# str|None}.
+USER_DIRECTORY_PATH = os.environ.get("USER_DIRECTORY_PATH", "user_directory.json")
+
+
+def _load_user_directory() -> dict[str, dict]:
+    try:
+        with open(USER_DIRECTORY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_user_directory() -> None:
+    try:
+        with open(USER_DIRECTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump(USER_DIRECTORY, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", USER_DIRECTORY_PATH)
+
+
+USER_DIRECTORY: dict[str, dict] = _load_user_directory()
+
+
+def remember_user(user_id: int | None, username: str | None) -> None:
+    """Запоминает соответствие id <-> username, чтобы позже можно было
+    найти пользователя по username (например, в /admin/user_promo_codes),
+    даже если сам промокод хранит только id."""
+    if user_id is None:
+        return
+    key = str(user_id)
+    entry = USER_DIRECTORY.get(key)
+    # Не затираем уже известный username значением None — resolve_user_id
+    # (который username вообще не знает) не должен "забывать" то, что уже
+    # выяснил resolve_user в другом запросе.
+    if entry is None:
+        USER_DIRECTORY[key] = {"user_id": user_id, "username": username}
+        _save_user_directory()
+    elif username is not None and entry.get("username") != username:
+        entry["username"] = username
+        _save_user_directory()
+
+
+def find_user_id_by_username(username: str | None) -> int | None:
+    """Ищет id пользователя по username в справочнике USER_DIRECTORY."""
+    if not username:
+        return None
+    uname = username.lower().lstrip("@")
+    for entry in USER_DIRECTORY.values():
+        if entry.get("username") == uname:
+            return entry.get("user_id")
+    return None
+
+
 def resolve_user_id(init_data_raw: str | None) -> int | None:
     """Достаёт и проверяет user_id из initData Telegram Mini App.
 
@@ -468,7 +547,11 @@ def resolve_user_id(init_data_raw: str | None) -> int | None:
         return None
     try:
         parsed = safe_parse_webapp_init_data(token=BOT_TOKEN, init_data=init_data_raw)
-        return parsed.user.id if parsed.user else None
+        if not parsed.user:
+            return None
+        username = parsed.user.username.lower() if parsed.user.username else None
+        remember_user(parsed.user.id, username)
+        return parsed.user.id
     except Exception:
         return None
 
@@ -485,6 +568,7 @@ def resolve_user(init_data_raw: str | None) -> tuple[int | None, str | None]:
         if not parsed.user:
             return None, None
         username = parsed.user.username.lower() if parsed.user.username else None
+        remember_user(parsed.user.id, username)
         return parsed.user.id, username
     except Exception:
         return None, None
@@ -719,6 +803,7 @@ dp = Dispatcher()
 @dp.message(CommandStart())
 async def start_handler(message: Message):
     username = message.from_user.username.lower() if message.from_user.username else None
+    remember_user(message.from_user.id, username)
     if is_banned_and_backfill(message.from_user.id, username):
         await message.answer("🚫 Вы забанены и не можете пользоваться ботом.")
         return
@@ -1079,7 +1164,9 @@ async def open_case_handler(request: web.Request) -> web.Response:
     except Exception:
         body = {}
 
-    user_id = resolve_user_id(body.get("init_data"))
+    user_id, username = resolve_user(body.get("init_data"))
+    if is_banned_and_backfill(user_id, username):
+        return web.json_response({"error": "banned"}, status=403)
 
     discount_percent = roll_case_prize()
     code = generate_case_code()
@@ -1421,6 +1508,82 @@ async def admin_promo_list_handler(request: web.Request) -> web.Response:
     return web.json_response({"promos": items})
 
 
+async def admin_user_promo_codes_handler(request: web.Request) -> web.Response:
+    """Отдаёт ВСЕ одноразовые кейсовые промокоды (GENERATED_PROMOS) любого
+    пользователя — по его username или числовому id. В отличие от
+    /my_promo_codes (который отдаёт только свои и только неиспользованные
+    коды текущего пользователя), эта ручка доступна админу для ЛЮБОГО
+    пользователя и отдаёт коды независимо от статуса "использован".
+
+    Если ввели username, а не id, пользователь ищется через
+    USER_DIRECTORY (заполняется автоматически при любом открытии мини-аппа
+    этим человеком) — если он никогда не открывал бота/мини-апп, найти его
+    коды по username невозможно (и вернётся ошибка "user_not_found)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_target = str(body.get("target", "")).strip()
+    if not raw_target:
+        return web.json_response({"error": "empty target"}, status=400)
+
+    target_id, target_username = _resolve_target_user(raw_target)
+    if target_id is None and not target_username:
+        return web.json_response({"error": "bad target"}, status=400)
+    if target_id is None:
+        # username есть, но ни разу не встречался в USER_DIRECTORY —
+        # значит, найти его промокоды нечем.
+        return web.json_response({"error": "user_not_found"}, status=404)
+
+    directory_entry = USER_DIRECTORY.get(str(target_id), {})
+    resolved_username = directory_entry.get("username") or target_username
+
+    codes = [
+        {
+            "code": promo["code"],
+            "discount_percent": promo["discount_percent"],
+            "used": bool(promo.get("used")),
+        }
+        for promo in GENERATED_PROMOS.values()
+        if promo.get("user_id") == target_id
+    ]
+    codes.reverse()
+
+    return web.json_response({
+        "codes": codes,
+        "user_id": target_id,
+        "username": resolved_username,
+    })
+
+
+async def admin_user_promo_delete_handler(request: web.Request) -> web.Response:
+    """Удаляет ЛЮБОЙ одноразовый кейсовый промокод по коду — независимо от
+    того, кому он принадлежит и использован ли он. Это отличает её от
+    /delete_promo_codes (доступна только владельцу кода и только для
+    неиспользованных). Доступно владельцу и назначенным админам."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_code = str(body.get("code", "")).strip()
+    key = raw_code.upper()
+
+    if key in GENERATED_PROMOS:
+        del GENERATED_PROMOS[key]
+        _save_generated_promos()
+        return web.json_response({"deleted": key})
+
+    return web.json_response({"error": "not found"}, status=404)
+
+
 async def admin_whoami_handler(request: web.Request) -> web.Response:
     """Отдаёт права текущего пользователя: is_admin (владелец или
     назначенный админ — видит вкладку "Админ-панель") и is_owner (только
@@ -1590,6 +1753,8 @@ def build_web_app() -> web.Application:
     app.router.add_post("/admin/promo/create", admin_promo_create_handler)
     app.router.add_post("/admin/promo/delete", admin_promo_delete_handler)
     app.router.add_post("/admin/promo/list", admin_promo_list_handler)
+    app.router.add_post("/admin/user_promo_codes", admin_user_promo_codes_handler)
+    app.router.add_post("/admin/user_promo_delete", admin_user_promo_delete_handler)
     app.router.add_post("/admin/whoami", admin_whoami_handler)
     app.router.add_post("/admin/admins/list", admin_admins_list_handler)
     app.router.add_post("/admin/admins/add", admin_admins_add_handler)
