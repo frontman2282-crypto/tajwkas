@@ -1531,9 +1531,9 @@ const CASE_REEL_DECOYS_BEFORE = 28;
 const CASE_REEL_DECOYS_AFTER = 6;
 const CASE_SPIN_DURATION_MS = 3200;
 
-// Кейс теперь платный — цена должна совпадать с CASE_PRICE_STARS в bot.py.
-const CASE_PRICE_STARS = 60;
-const CASE_OPEN_BTN_LABEL = `Открыть кейс — 60 ${STAR_ICON_SVG}`;
+// Кейс снова бесплатный — открывается сразу через POST /open_case, без
+// оплаты звёздами (см. CASE_IS_FREE в bot.py).
+const CASE_OPEN_BTN_LABEL = `Открыть кейс`;
 
 // Сколько раз и с каким интервалом опрашивать /claim_case_reward после
 // того, как Telegram сообщил статус оплаты "paid" — реальный приз
@@ -1707,99 +1707,79 @@ async function openCase() {
   }
 
   caseOpenBtn.disabled = true;
-  caseOpenBtn.textContent = "Открываем оплату...";
+  caseOpenBtn.textContent = "Открываем кейс...";
   setCaseStatus("");
 
-  let invoiceLink;
+  // Кейс бесплатный — приз выдаётся сразу одним запросом, без оплаты.
+  let reward;
   try {
-    const response = await fetch("/create_case_invoice", {
+    const response = await fetch("/open_case", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ init_data: tg.initData }),
     });
     if (!response.ok) {
       const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось создать оплату");
+      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось открыть кейс");
     }
-    const data = await response.json();
-    invoiceLink = data.invoice_link;
+    reward = await response.json();
   } catch (err) {
     caseOpenBtn.disabled = false;
     caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-    setCaseStatus(err.message || "Не удалось открыть оплату, попробуй ещё раз", "error");
+    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
     return;
   }
 
-  tg.openInvoice(invoiceLink, async (status) => {
-    if (status !== "paid") {
-      caseOpenBtn.disabled = false;
-      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-      if (status === "cancelled") {
-        setCaseStatus("Оплата отменена");
-      } else if (status === "failed") {
-        setCaseStatus("Оплата не прошла", "error");
-      } else {
-        setCaseStatus("Статус: " + status);
-      }
-      return;
-    }
+  caseOpenBtn.hidden = true;
+  caseResult.hidden = true;
+  caseAgainBtn.hidden = true;
+  setCaseStatus("Крутим кейс...");
+  caseStage.classList.add("case-stage--spinning");
+  caseReelWrap.hidden = false;
 
-    caseOpenBtn.hidden = true;
-    caseResult.hidden = true;
-    caseAgainBtn.hidden = true;
-    setCaseStatus("Оплата прошла, крутим кейс...");
-    caseStage.classList.add("case-stage--spinning");
-    caseReelWrap.hidden = false;
+  try {
+    spinReelTo(reward.discount_percent);
+    tg?.HapticFeedback?.selectionChanged();
 
-    try {
-      const reward = await pollCaseReward();
-      if (!reward) {
-        throw new Error("Оплата прошла, но приз пока не пришёл — открой «Мои промокоды» через минуту");
-      }
+    // Ждём, пока рулетка реально докрутится до приза, и только потом
+    // показываем карточку результата — иначе она появится раньше, чем
+    // прокрутка остановится, и будет выглядеть рассинхронизированно.
+    await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
 
-      spinReelTo(reward.discount_percent);
-      tg?.HapticFeedback?.selectionChanged();
+    caseResultBadge.textContent = `-${reward.discount_percent}%`;
+    caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
+    caseResultCode.textContent = reward.code;
 
-      // Ждём, пока рулетка реально докрутится до приза, и только потом
-      // показываем карточку результата — иначе она появится раньше, чем
-      // прокрутка остановится, и будет выглядеть рассинхронизированно.
-      await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
+    caseCopyBtn.textContent = "Скопировать";
+    caseCopyBtn.classList.remove("case-copy-btn--copied");
 
-      caseResultBadge.textContent = `-${reward.discount_percent}%`;
-      caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
-      caseResultCode.textContent = reward.code;
+    caseResult.hidden = false;
+    caseResult.style.animation = "none";
+    // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    caseResult.style.animation = "";
+    caseAgainBtn.hidden = false;
 
-      caseCopyBtn.textContent = "Скопировать";
-      caseCopyBtn.classList.remove("case-copy-btn--copied");
+    caseReelWrap.hidden = true;
+    caseStage.classList.remove("case-stage--spinning");
+    caseStage.classList.add("case-stage--opened");
 
-      caseResult.hidden = false;
-      caseResult.style.animation = "none";
-      // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      caseResult.style.animation = "";
-      caseAgainBtn.hidden = false;
+    setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
 
-      caseReelWrap.hidden = true;
-      caseStage.classList.remove("case-stage--spinning");
-      caseStage.classList.add("case-stage--opened");
-
-      setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
-      tg?.HapticFeedback?.notificationOccurred("success");
-
-      // Мини-меню с промокодом поверх экрана — появляется сразу после того,
-      // как кнопка "Открыть кейс ещё раз" уже видна.
-      showCasePrizeModal(reward.discount_percent, reward.code);
-    } catch (err) {
-      caseReelWrap.hidden = true;
-      caseStage.classList.remove("case-stage--spinning");
-      caseOpenBtn.hidden = false;
-      setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
-      tg?.HapticFeedback?.notificationOccurred("error");
-    } finally {
-      caseOpenBtn.disabled = false;
-      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-    }
-  });
+    // Мини-меню с промокодом поверх экрана — появляется сразу после того,
+    // как кнопка "Открыть кейс ещё раз" уже видна.
+    showCasePrizeModal(reward.discount_percent, reward.code);
+  } catch (err) {
+    caseReelWrap.hidden = true;
+    caseStage.classList.remove("case-stage--spinning");
+    caseOpenBtn.hidden = false;
+    setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    caseOpenBtn.disabled = false;
+    caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
+  }
 }
 
 caseEntryCard.addEventListener("click", () => {
@@ -1870,6 +1850,12 @@ const adminPromoCreateBtn = document.getElementById("adminPromoCreateBtn");
 const adminPromoStatus = document.getElementById("adminPromoStatus");
 const adminPromoList = document.getElementById("adminPromoList");
 const adminPromoEmpty = document.getElementById("adminPromoEmpty");
+
+const adminUserPromoInput = document.getElementById("adminUserPromoInput");
+const adminUserPromoBtn = document.getElementById("adminUserPromoBtn");
+const adminUserPromoStatus = document.getElementById("adminUserPromoStatus");
+const adminUserPromoList = document.getElementById("adminUserPromoList");
+const adminUserPromoEmpty = document.getElementById("adminUserPromoEmpty");
 
 // Иконка "крестик" для кнопок удаления/разбана в списках
 const REMOVE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
@@ -2172,6 +2158,95 @@ adminPromoCreateBtn.addEventListener("click", async () => {
   } finally {
     adminPromoCreateBtn.disabled = false;
   }
+});
+
+// --- Промокоды конкретного пользователя (поиск по username/id, любые) ---
+
+// Запоминаем, чьи промокоды сейчас показаны в списке, — нужно только
+// чтобы после удаления кода перезапросить список того же пользователя,
+// а не заставлять админа вводить его снова.
+let currentUserPromoTarget = "";
+
+function renderUserPromoList(items) {
+  adminUserPromoList.innerHTML = "";
+  adminUserPromoEmpty.hidden = items.length > 0;
+
+  items.forEach((promo) => {
+    const row = document.createElement("div");
+    row.className = "admin-list-item";
+
+    const info = document.createElement("div");
+    info.className = "admin-list-item-info";
+
+    const title = document.createElement("div");
+    title.className = "admin-list-item-title";
+    title.textContent = promo.code;
+
+    const sub = document.createElement("div");
+    sub.className = "admin-list-item-sub";
+    sub.textContent = promo.used ? "Уже использован" : "Не использован";
+
+    info.appendChild(title);
+    info.appendChild(sub);
+
+    const badge = document.createElement("span");
+    badge.className = "admin-list-item-badge";
+    badge.textContent = `-${promo.discount_percent}%`;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "admin-list-item-remove";
+    removeBtn.innerHTML = REMOVE_ICON_SVG;
+    removeBtn.addEventListener("click", () => deleteUserPromo(promo.code));
+
+    row.appendChild(info);
+    row.appendChild(badge);
+    row.appendChild(removeBtn);
+    adminUserPromoList.appendChild(row);
+  });
+}
+
+async function searchUserPromoCodes(target) {
+  adminUserPromoBtn.disabled = true;
+  try {
+    const data = await adminPost("/admin/user_promo_codes", { target });
+    currentUserPromoTarget = target;
+    const who = data.username ? "@" + data.username : `id ${data.user_id}`;
+    if (data.codes.length === 0) {
+      setAdminStatus(adminUserPromoStatus, `У пользователя ${who} пока нет промокодов`, "success");
+    } else {
+      setAdminStatus(adminUserPromoStatus, `Промокоды пользователя ${who}:`, "success");
+    }
+    renderUserPromoList(data.codes || []);
+  } catch (err) {
+    currentUserPromoTarget = "";
+    const message = err.message === "user_not_found"
+      ? "Этот пользователь ни разу не открывал мини-апп — его нельзя найти по username"
+      : "Не удалось найти пользователя: " + err.message;
+    setAdminStatus(adminUserPromoStatus, message, "error");
+    renderUserPromoList([]);
+  } finally {
+    adminUserPromoBtn.disabled = false;
+  }
+}
+
+async function deleteUserPromo(code) {
+  try {
+    await adminPost("/admin/user_promo_delete", { code });
+    tg?.HapticFeedback?.selectionChanged();
+    if (currentUserPromoTarget) searchUserPromoCodes(currentUserPromoTarget);
+  } catch (err) {
+    setAdminStatus(adminUserPromoStatus, "Не удалось удалить промокод", "error");
+  }
+}
+
+adminUserPromoBtn.addEventListener("click", () => {
+  const target = adminUserPromoInput.value.trim();
+  if (!target) {
+    setAdminStatus(adminUserPromoStatus, "Введи username или id пользователя", "error");
+    return;
+  }
+  searchUserPromoCodes(target);
 });
 
 // ====== Инициализация ======
