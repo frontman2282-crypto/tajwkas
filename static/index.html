@@ -13,7 +13,7 @@
        сервере интерфейс мог "через раз" открываться в неконсистентном виде
        (например, разметка есть, а стили/скрипт — от старой версии или не
        успели прогрузиться). При каждом деплое меняй значение v=. -->
-  <link rel="stylesheet" href="style.css?v=10">
+  <link rel="stylesheet" href="style.css?v=12">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
@@ -22,13 +22,27 @@
   <div id="splash" class="splash">
     <div class="splash-mark">
       <div class="splash-aura"></div>
-      <div class="splash-circle"></div>
+      <div class="splash-ring"></div>
+      <div class="splash-circle">
+        <svg class="splash-glyph" viewBox="0 0 24 24" aria-hidden="true">
+          <defs>
+            <linearGradient id="splashGlyphGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="#ffffff"/>
+              <stop offset="100%" stop-color="#b6b6bf"/>
+            </linearGradient>
+          </defs>
+          <path d="M12 2 19 6v5.3c0 4.5-3 7.6-7 8.7-4-1.1-7-4.2-7-8.7V6Z" fill="none" stroke="url(#splashGlyphGrad)" stroke-width="1.6" stroke-linejoin="round"/>
+          <text x="12" y="15.2" text-anchor="middle" font-family="'Golos Text', sans-serif" font-size="9.5" font-weight="800" fill="url(#splashGlyphGrad)">D</text>
+        </svg>
+      </div>
       <div class="splash-spinner"></div>
+      <div class="splash-orbit"><span class="splash-orbit-dot"></span></div>
     </div>
     <div class="splash-label">
       <span>Загрузка</span>
       <span class="splash-dots"><i></i><i></i><i></i></span>
     </div>
+    <div class="splash-progress"><div class="splash-progress-bar"></div></div>
   </div>
 
   <!-- Экран "Вы забанены" — показывается вместо приложения, если сервер
@@ -502,6 +516,6 @@
     </button>
   </template>
 
-  <script src="script.js?v=10"></script>
+  <script src="script.js?v=12"></script>
 </body>
 </html>
