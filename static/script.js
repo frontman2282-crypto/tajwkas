@@ -1116,8 +1116,28 @@ function switchView(target) {
   }
 }
 
+// Username поддержки — вкладка "Поддержка" в таббаре просто открывает
+// личные сообщения с этим пользователем, без переключения экрана внутри
+// мини-аппа (см. обработчик клика по вкладкам ниже).
+const SUPPORT_USERNAME = "meaninglessperson";
+
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
+    // Вкладка "Поддержка" — особый случай: не меняем активный экран/вкладку
+    // мини-аппа, а просто открываем личку с поддержкой и выходим из
+    // обработчика. tg.openTelegramLink корректно работает внутри Mini App,
+    // window.open — запасной вариант для случаев, когда приложение открыто
+    // вне Telegram (см. такой же паттерн у nftModalWrite выше).
+    if (tab.dataset.view === "support") {
+      tg?.HapticFeedback?.selectionChanged();
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(`https://t.me/${SUPPORT_USERNAME}`);
+      } else {
+        window.open(`https://t.me/${SUPPORT_USERNAME}`, "_blank");
+      }
+      return;
+    }
+
     switchView(tab.dataset.view);
     tg?.HapticFeedback?.selectionChanged();
     if (tab.dataset.view === "admin") {
