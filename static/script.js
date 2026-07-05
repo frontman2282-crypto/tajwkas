@@ -623,29 +623,36 @@ const nftModalText = document.getElementById("nftModalText");
 const nftModalCancel = document.getElementById("nftModalCancel");
 const nftModalWrite = document.getElementById("nftModalWrite");
 
-// Telegram-логин владельца, которому пишет пользователь при оплате
-// способами, оформляемыми вручную (NFT, RU карта, UAH).
-const MANUAL_PAYMENT_OWNER_USERNAME = "alyuplost";
+// Telegram-логины, которым пишет пользователь при оплате способами,
+// оформляемыми вручную (NFT, RU карта, UAH). Оплата гривнами ведёт к
+// администратору (alyuplost), NFT и RU карта — к владельцу
+// (meaninglessperson). Задаётся отдельно на каждый способ в
+// MANUAL_PAYMENT_METHODS через поле ownerUsername.
+const MANUAL_PAYMENT_OWNER_USERNAME = "meaninglessperson";
 
-// Способы оплаты, которые оформляются не автоматически, а перепиской с
-// владельцем в личных сообщениях. Чтобы добавить новый такой способ,
-// достаточно добавить сюда запись и кнопку .payment-option с тем же
-// data-method в разметке.
+// Способы оплаты, которые оформляются не автоматически, а перепиской в
+// личных сообщениях (с владельцем или администратором — см. ownerUsername
+// у каждого способа). Чтобы добавить новый такой способ, достаточно
+// добавить сюда запись и кнопку .payment-option с тем же data-method в
+// разметке.
 const MANUAL_PAYMENT_METHODS = {
   nft: {
     buyLabel: "Нажмите для оплаты NFT",
     modalTitle: "Оплата NFT",
     modalText: "Напишите владельцу, чтобы оформить оплату NFT",
+    ownerUsername: "meaninglessperson",
   },
   card: {
     buyLabel: "Нажмите для оплаты RU картой",
     modalTitle: "Оплата RU картой",
     modalText: "Напишите владельцу, чтобы оформить оплату RU картой",
+    ownerUsername: "meaninglessperson",
   },
   uah: {
     buyLabel: "Нажмите для оплаты UAH (Гривны)",
     modalTitle: "Оплата UAH (Гривны)",
-    modalText: "Напишите владельцу, чтобы оформить оплату гривной",
+    modalText: "Напишите администратору, чтобы оформить оплату гривной",
+    ownerUsername: "alyuplost",
   },
 };
 
@@ -811,13 +818,18 @@ nftModalBackdrop.addEventListener("click", () => {
 
 nftModalWrite.addEventListener("click", () => {
   hideNftModal();
-  // Открываем личные сообщения с владельцем в Telegram. tg.openTelegramLink
-  // корректно работает внутри Mini App, window.open — запасной вариант
-  // для случаев, когда приложение открыто вне Telegram.
+  // Открываем личные сообщения с нужным получателем в Telegram — у каждого
+  // способа оплаты свой username (см. ownerUsername в MANUAL_PAYMENT_METHODS):
+  // гривны идут администратору, NFT и RU карта — владельцу.
+  // tg.openTelegramLink корректно работает внутри Mini App, window.open —
+  // запасной вариант для случаев, когда приложение открыто вне Telegram.
+  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
+  const targetUsername = manualConfig?.ownerUsername || MANUAL_PAYMENT_OWNER_USERNAME;
+
   if (tg?.openTelegramLink) {
-    tg.openTelegramLink(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`);
+    tg.openTelegramLink(`https://t.me/${targetUsername}`);
   } else {
-    window.open(`https://t.me/${MANUAL_PAYMENT_OWNER_USERNAME}`, "_blank");
+    window.open(`https://t.me/${targetUsername}`, "_blank");
   }
   tg?.HapticFeedback?.selectionChanged();
 });
