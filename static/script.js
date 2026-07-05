@@ -10,7 +10,9 @@ const PRODUCTS = [
       "Dystopia — это премиальный игровой проект нового уровня, созданный для тех, кто хочет больше, чем обычный опыт в игре. Это система уникальных возможностей, расширенного функционала и особого статуса, который выделяет тебя среди остальных игроков.",
     price: 2,
     initial: "D",
-    badges: ["UNDETECTED"],
+    // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
+    // пилюли поверх обложки assets/dystopia.png.
+    badges: ["UNDETECTED", "ONLINE"],
   },
 ];
 
@@ -204,6 +206,15 @@ const productList = document.getElementById("productList");
 const cardTemplate = document.getElementById("productCardTemplate");
 const durationTemplate = document.getElementById("durationOptionTemplate");
 
+// Стартовая цена для пилюли на обложке карточки ("от 550 ₽") — берём
+// минимальную цену среди тарифов RU-карты (самый короткий срок, 7 дней),
+// т.к. это единственный способ оплаты с ценой именно в рублях.
+function getStartingRubPrice() {
+  const values = Object.values(RU_CARD_PRICES);
+  const min = Math.min(...values);
+  return min.toLocaleString("ru-RU");
+}
+
 function renderProducts() {
   productList.innerHTML = "";
 
@@ -213,28 +224,24 @@ function renderProducts() {
     card.dataset.productId = product.id;
     card.style.setProperty("--card-index", index);
 
-    const row = node.querySelector(".card-row");
-    const badgesEl = node.querySelector(".card-row-badges");
+    const btn = node.querySelector(".card-hero-btn");
+    const badgesEl = node.querySelector(".card-hero-badges");
 
     (product.badges || []).forEach((badgeText) => {
       const b = document.createElement("span");
-      b.className = "badge-tag";
+      b.className = "card-hero-badge";
       b.textContent = badgeText;
       badgesEl.appendChild(b);
     });
 
-    node.querySelector(".card-row-initial").textContent = product.initial;
-    node.querySelector(".card-row-title").textContent = product.title;
-    node.querySelector(".card-row-subtitle").textContent = product.subtitle;
-    // Цена на карточке товара в списке магазина больше не показывается —
-    // у товара несколько тарифов (7 дней / 30 дней / 12 месяцев) с разной
-    // ценой, и единственное число тут только сбивало с толку. Реальные
-    // цены по тарифам видны на экране оформления.
-    const priceEl = node.querySelector(".card-row-price");
-    if (priceEl) priceEl.hidden = true;
+    node.querySelector(".card-hero-title").textContent = product.title;
+    node.querySelector(".card-hero-subtitle").textContent = product.subtitle;
+
+    const priceValueEl = node.querySelector(".card-hero-price-value");
+    if (priceValueEl) priceValueEl.textContent = getStartingRubPrice() + " ₽";
 
     // Клик по карточке — переходим на отдельный экран оформления покупки
-    row.addEventListener("click", () => {
+    btn.addEventListener("click", () => {
       openCheckout(product);
       tg?.HapticFeedback?.selectionChanged();
     });
