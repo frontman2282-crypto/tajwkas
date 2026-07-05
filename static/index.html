@@ -492,6 +492,15 @@
       </span>
       <span class="tab-label">Профиль</span>
     </button>
+    <!-- Вкладка "Поддержка" не переключает экран — по клику сразу открывает
+         личные сообщения с @meaninglessperson (см. обработчик в script.js,
+         который проверяет data-view === "support" отдельно от switchView). -->
+    <button class="tab" data-view="support">
+      <span class="tab-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M9.2 9.2a2.8 2.8 0 1 1 4.3 2.4c-.7.5-1.5 1-1.5 2.1"/><path d="M12 17.2h.01"/></svg>
+      </span>
+      <span class="tab-label">Поддержка</span>
+    </button>
     <!-- Показывается владельцу и назначенным админам — см. applyAdminAccess() в script.js -->
     <button class="tab" data-view="admin" id="adminTabBtn" hidden>
       <span class="tab-icon">
