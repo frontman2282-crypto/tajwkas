@@ -512,21 +512,22 @@
 
   <!-- Шаблон карточки товара -->
   <template id="productCardTemplate">
-    <article class="card">
-      <button class="card-row" type="button">
-        <div class="card-row-icon"><span class="card-row-initial"></span></div>
-        <div class="card-row-info">
-          <h2 class="card-row-title"></h2>
-          <div class="card-row-meta">
-            <div class="card-row-badges"></div>
-            <p class="card-row-subtitle"></p>
+    <article class="card card--hero">
+      <button class="card-hero-btn" type="button">
+        <div class="card-hero-media">
+          <div class="card-hero-badges"></div>
+          <div class="card-hero-price">
+            <span class="card-hero-price-label">от</span>
+            <span class="card-hero-price-value"></span>
           </div>
         </div>
-        <div class="card-row-price">
-          <svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>
-          <span class="price-value"></span>
+        <div class="card-hero-footer">
+          <div class="card-hero-info">
+            <h2 class="card-hero-title"></h2>
+            <p class="card-hero-subtitle"></p>
+          </div>
+          <span class="card-hero-chevron">›</span>
         </div>
-        <span class="card-row-chevron">›</span>
       </button>
     </article>
   </template>
