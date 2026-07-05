@@ -1,11 +1,11 @@
 :root {
-  --bg-black: #0b0b0d;
-  --bg-graphite-deep: #232326;
-  --bg-graphite-mid: #19191c;
-  --card-bg: #1e1e21;
-  --card-bg-2: #161618;
-  --border: #38383e;
-  --border-soft: #29292d;
+  --bg-black: #050506;
+  --bg-graphite-deep: #131315;
+  --bg-graphite-mid: #0c0c0e;
+  --card-bg: #131315;
+  --card-bg-2: #09090a;
+  --border: #242428;
+  --border-soft: #1a1a1d;
   --silver-1: #b6b6bf;
   --silver-2: #f1f1f4;
   --silver-glow: #8d8d95;
@@ -81,7 +81,7 @@ a,
 input,
 select,
 textarea,
-.card-row,
+.card-hero-btn,
 .tab,
 .duration-option,
 .payment-toggle,
@@ -605,69 +605,115 @@ body.keyboard-open .tabbar {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* --- Compact row (collapsed state) --- */
+/* --- Hero card: фоновая обложка (assets/dystopia.png) + бейджи + цена --- */
 
-.card-row {
+.card--hero {
+  padding: 0;
+}
+
+.card-hero-btn {
+  display: block;
   width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 24px 22px;
-  min-height: 92px;
   border: none;
   background: transparent;
   color: inherit;
   font-family: inherit;
   text-align: left;
   cursor: pointer;
+  padding: 0;
 }
 
-.card-row-icon {
-  flex-shrink: 0;
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  background: linear-gradient(160deg, #2a2a2f, #131315);
-  border: 1px solid var(--border-soft);
+.card-hero-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background-image:
+    linear-gradient(180deg, rgba(5, 5, 6, 0.05) 0%, rgba(5, 5, 6, 0.25) 55%, rgba(5, 5, 6, 0.9) 100%),
+    url("assets/dystopia.png");
+  background-size: cover;
+  background-position: center;
+}
+
+.card-hero-badges {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-hero-badge {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 100px;
+  color: var(--text-main);
+  background: rgba(9, 9, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.card-hero-price {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 7px 12px;
+  border-radius: 100px;
+  background: rgba(9, 9, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.card-hero-price-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.card-hero-price-value {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+}
+
+.card-hero-footer {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
 }
 
-.card-row-initial {
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--silver-2);
-  text-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
-}
-
-.card-row-info {
-  flex: 1;
+.card-hero-info {
   min-width: 0;
 }
 
-.card-row-title {
+.card-hero-title {
   font-family: var(--font-display);
-  font-size: 19px;
-  font-weight: 700;
+  font-size: 21px;
+  font-weight: 800;
   letter-spacing: -0.01em;
+  color: var(--text-main);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.card-row-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-  min-width: 0;
-}
-
-.card-row-subtitle {
-  flex: 1;
-  min-width: 0;
+.card-hero-subtitle {
+  margin-top: 4px;
   font-size: 12.5px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -675,35 +721,11 @@ body.keyboard-open .tabbar {
   text-overflow: ellipsis;
 }
 
-.card-row-badges {
-  display: flex;
+.card-hero-chevron {
   flex-shrink: 0;
-  gap: 6px;
-}
-
-.badge-tag {
-  font-family: var(--font-display);
-  font-size: 9.5px;
-  font-weight: 700;
-  letter-spacing: 0.05em;
-  padding: 3px 7px;
-  border-radius: 100px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--green), var(--green-dark));
-  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.card-row-price {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.card-row-price[hidden] {
-  display: none;
+  font-size: 22px;
+  color: var(--text-faint);
+  line-height: 1;
 }
 
 .icon-star {
@@ -721,11 +743,20 @@ body.keyboard-open .tabbar {
   font-family: var(--font-display);
 }
 
-.card-row-chevron {
+/* .badge-tag используется на экране оформления заказа (checkoutBadges) —
+   сохраняем отдельно от бейджей на карточке магазина (.card-hero-badge). */
+.badge-tag {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+  white-space: nowrap;
   flex-shrink: 0;
-  font-size: 20px;
-  color: var(--text-faint);
-  line-height: 1;
 }
 
 .option-group {
