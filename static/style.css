@@ -738,6 +738,37 @@ body.keyboard-open .tabbar {
   min-width: 0;
 }
 
+.card-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-hero-platforms {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-hero-platform {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+}
+
+.card-hero-platform svg {
+  width: 12px;
+  height: 12px;
+}
+
 .card-hero-title {
   font-family: var(--font-display);
   font-size: 21px;
@@ -747,6 +778,7 @@ body.keyboard-open .tabbar {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .card-hero-subtitle {
@@ -2400,9 +2432,7 @@ body.keyboard-open .tabbar {
 }
 
 .checkout-hero-badges {
-  display: flex;
-  gap: 6px;
-  margin-bottom: 8px;
+  display: none;
 }
 
 .checkout-hero-subtitle {
