@@ -267,16 +267,29 @@
       </header>
 
       <div class="checkout-hero">
-        <div class="checkout-hero-icon"><span id="checkoutInitial"></span></div>
+        <div class="checkout-hero-icon"><img id="checkoutInitial" src="" alt=""></div>
         <div class="checkout-hero-info">
           <div class="checkout-hero-badges" id="checkoutBadges"></div>
           <p class="checkout-hero-subtitle" id="checkoutSubtitle"></p>
         </div>
       </div>
 
-      <div class="description-card">
-        <span class="description-card-label">Описание</span>
-        <p class="description-card-text" id="checkoutDescription"></p>
+      <div class="gallery-card">
+        <div class="gallery-main" id="galleryMain">
+          <img id="galleryMainImg" src="" alt="">
+          <video id="galleryMainVideo" hidden playsinline controls></video>
+        </div>
+        <div class="gallery-thumbs" id="galleryThumbs">
+          <button class="gallery-thumb gallery-thumb--active" type="button" data-media-type="image" data-media-src="assets/dystscreen.png">
+            <img src="assets/dystscreen.png" alt="">
+          </button>
+          <button class="gallery-thumb" type="button" data-media-type="video" data-media-src="assets/dystvideo.mp4" data-poster="assets/dystscreen.png">
+            <img src="assets/dystscreen.png" alt="">
+            <span class="gallery-thumb-play">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7Z"/></svg>
+            </span>
+          </button>
+        </div>
       </div>
 
       <div class="option-group">
