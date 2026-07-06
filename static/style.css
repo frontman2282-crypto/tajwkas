@@ -693,12 +693,31 @@ body.keyboard-open .tabbar {
   font-weight: 800;
   color: var(--text-main);
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   transition: opacity 0.26s ease, transform 0.26s ease;
 }
 
 .card-hero-price-value.is-fading {
   opacity: 0;
   transform: translateY(4px);
+}
+
+.card-hero-price-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.card-hero-price-icon--star {
+  fill: var(--star);
+  filter: drop-shadow(0 0 4px rgba(255, 196, 30, 0.55));
+}
+
+.card-hero-price-icon--badge {
+  fill: currentColor;
+  color: var(--text-main);
 }
 
 .card-hero-footer {
