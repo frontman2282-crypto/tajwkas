@@ -10,9 +10,12 @@ const PRODUCTS = [
       "Dystopia — это премиальный игровой проект нового уровня, созданный для тех, кто хочет больше, чем обычный опыт в игре. Это система уникальных возможностей, расширенного функционала и особого статуса, который выделяет тебя среди остальных игроков.",
     price: 2,
     initial: "D",
+    // Квадратный логотип товара — используется в шапке экрана оформления
+    // вместо буквы-заглушки.
+    logo: "assets/dystlogo.png",
     // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
     // пилюли поверх обложки assets/dystopia.png.
-    badges: ["UNDETECTED", "ONLINE"],
+    badges: ["UNDETECTED"],
   },
 ];
 
@@ -215,8 +218,28 @@ function getStartingRubPrice() {
   return min.toLocaleString("ru-RU");
 }
 
+// Пилюля с ценой на карточке магазина по очереди показывает стартовую
+// цену в каждом из способов оплаты (7-дневный тариф — самый дешёвый),
+// с плавной анимацией перехода между значениями (см. .card-hero-price-value
+// и класс .is-fading в style.css).
+function buildHeroPriceCycle() {
+  return [
+    `${getStartingRubPrice()} ₽`,
+    `${DURATIONS[0].price.toLocaleString("ru-RU")} звёзд`,
+    `${XROCKET_PRICES["7d"]}$`,
+    `${UAH_CARD_PRICES["7d"].toLocaleString("ru-RU")} грн`,
+  ];
+}
+
+// ID интервалов анимации цены на карточках — чистятся при каждом
+// перерисовывании списка, чтобы при повторном renderProducts() не
+// накапливались "осиротевшие" таймеры на удалённых из DOM карточках.
+let heroPriceIntervals = [];
+
 function renderProducts() {
   productList.innerHTML = "";
+  heroPriceIntervals.forEach((id) => clearInterval(id));
+  heroPriceIntervals = [];
 
   PRODUCTS.forEach((product, index) => {
     const node = cardTemplate.content.cloneNode(true);
@@ -229,7 +252,13 @@ function renderProducts() {
 
     (product.badges || []).forEach((badgeText) => {
       const b = document.createElement("span");
-      b.className = "card-hero-badge";
+      // UNDETECTED — статус безопасности, выделяем его зелёным, как
+      // положительный индикатор. Остальные возможные бейджи остаются
+      // в нейтральном тёмном стиле.
+      b.className =
+        badgeText === "UNDETECTED"
+          ? "card-hero-badge card-hero-badge--accent"
+          : "card-hero-badge";
       b.textContent = badgeText;
       badgesEl.appendChild(b);
     });
@@ -238,7 +267,21 @@ function renderProducts() {
     node.querySelector(".card-hero-subtitle").textContent = product.subtitle;
 
     const priceValueEl = node.querySelector(".card-hero-price-value");
-    if (priceValueEl) priceValueEl.textContent = getStartingRubPrice() + " ₽";
+    if (priceValueEl) {
+      const cycle = buildHeroPriceCycle();
+      let cycleIndex = 0;
+      priceValueEl.textContent = cycle[cycleIndex];
+
+      const intervalId = setInterval(() => {
+        priceValueEl.classList.add("is-fading");
+        setTimeout(() => {
+          cycleIndex = (cycleIndex + 1) % cycle.length;
+          priceValueEl.textContent = cycle[cycleIndex];
+          priceValueEl.classList.remove("is-fading");
+        }, 260);
+      }, 2200);
+      heroPriceIntervals.push(intervalId);
+    }
 
     // Клик по карточке — переходим на отдельный экран оформления покупки
     btn.addEventListener("click", () => {
@@ -602,7 +645,10 @@ const viewCheckout = document.getElementById("view-checkout");
 const checkoutTitle = document.getElementById("checkoutTitle");
 const checkoutInitial = document.getElementById("checkoutInitial");
 const checkoutSubtitle = document.getElementById("checkoutSubtitle");
-const checkoutDescription = document.getElementById("checkoutDescription");
+const galleryMain = document.getElementById("galleryMain");
+const galleryMainImg = document.getElementById("galleryMainImg");
+const galleryMainVideo = document.getElementById("galleryMainVideo");
+const galleryThumbs = document.getElementById("galleryThumbs");
 const checkoutBadges = document.getElementById("checkoutBadges");
 const checkoutDurations = document.getElementById("checkoutDurations");
 const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
@@ -848,7 +894,7 @@ nftModalWrite.addEventListener("click", () => {
 // способом их показать.
 const checkoutAnimatedEls = [
   viewCheckout.querySelector(".checkout-hero"),
-  viewCheckout.querySelector(".description-card"),
+  viewCheckout.querySelector(".gallery-card"),
   ...viewCheckout.querySelectorAll(".option-group"),
   checkoutBuyBtn,
   checkoutManualBtn,
@@ -893,6 +939,34 @@ function playCheckoutEntrance() {
   }, 900);
 }
 
+// Переключает главный медиа-блок экрана оформления между скриншотом и
+// видео в зависимости от выбранной миниатюры.
+function setGalleryMedia(type, src) {
+  if (type === "video") {
+    galleryMainVideo.pause();
+    galleryMainVideo.src = src;
+    galleryMainVideo.hidden = false;
+    galleryMainImg.hidden = true;
+  } else {
+    galleryMainVideo.pause();
+    galleryMainVideo.removeAttribute("src");
+    galleryMainVideo.hidden = true;
+    galleryMainImg.src = src;
+    galleryMainImg.hidden = false;
+  }
+}
+
+galleryThumbs.querySelectorAll(".gallery-thumb").forEach((thumb) => {
+  thumb.addEventListener("click", () => {
+    galleryThumbs
+      .querySelectorAll(".gallery-thumb")
+      .forEach((el) => el.classList.remove("gallery-thumb--active"));
+    thumb.classList.add("gallery-thumb--active");
+    setGalleryMedia(thumb.dataset.mediaType, thumb.dataset.mediaSrc);
+    tg?.HapticFeedback?.selectionChanged();
+  });
+});
+
 let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
 let checkoutPromoCode = null;
@@ -915,9 +989,19 @@ function openCheckout(product, prefillPromoCode) {
   hideNftModal();
 
   checkoutTitle.textContent = product.title;
-  checkoutInitial.textContent = product.initial;
+  checkoutInitial.src = product.logo || "";
   checkoutSubtitle.textContent = product.subtitle;
-  checkoutDescription.textContent = product.description || "";
+
+  // При каждом открытии оформления галерея сбрасывается на первый слайд
+  // (скриншот), а не остаётся на видео, выбранном в прошлый раз.
+  const firstThumb = galleryThumbs.querySelector(".gallery-thumb");
+  galleryThumbs
+    .querySelectorAll(".gallery-thumb")
+    .forEach((el) => el.classList.remove("gallery-thumb--active"));
+  if (firstThumb) {
+    firstThumb.classList.add("gallery-thumb--active");
+    setGalleryMedia(firstThumb.dataset.mediaType, firstThumb.dataset.mediaSrc);
+  }
 
   checkoutBadges.innerHTML = "";
   (product.badges || []).forEach((badgeText) => {
