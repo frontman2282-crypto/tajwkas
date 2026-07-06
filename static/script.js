@@ -692,12 +692,9 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
 // ====== Экран оформления покупки (checkout) ======
 const viewCheckout = document.getElementById("view-checkout");
 const checkoutTitle = document.getElementById("checkoutTitle");
-const checkoutInitial = document.getElementById("checkoutInitial");
-const checkoutSubtitle = document.getElementById("checkoutSubtitle");
 const galleryMain = document.getElementById("galleryMain");
 const galleryMainImg = document.getElementById("galleryMainImg");
 const galleryThumbs = document.getElementById("galleryThumbs");
-const checkoutBadges = document.getElementById("checkoutBadges");
 const checkoutDurations = document.getElementById("checkoutDurations");
 const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
 const checkoutBuyText = document.getElementById("checkoutBuyText");
@@ -941,7 +938,6 @@ nftModalWrite.addEventListener("click", () => {
 // opacity на время своего проигрывания, а не является единственным
 // способом их показать.
 const checkoutAnimatedEls = [
-  viewCheckout.querySelector(".checkout-hero"),
   viewCheckout.querySelector(".gallery-card"),
   ...viewCheckout.querySelectorAll(".option-group"),
   checkoutBuyBtn,
@@ -1025,8 +1021,6 @@ function openCheckout(product, prefillPromoCode) {
   hideNftModal();
 
   checkoutTitle.textContent = product.title;
-  checkoutInitial.src = product.logo || "";
-  checkoutSubtitle.textContent = product.subtitle;
 
   // При каждом открытии оформления галерея сбрасывается на первый слайд
   // (скриншот), а не остаётся на видео, выбранном в прошлый раз.
@@ -1038,14 +1032,6 @@ function openCheckout(product, prefillPromoCode) {
     firstThumb.classList.add("gallery-thumb--active");
     setGalleryMedia(firstThumb.dataset.mediaSrc);
   }
-
-  checkoutBadges.innerHTML = "";
-  (product.badges || []).forEach((badgeText) => {
-    const b = document.createElement("span");
-    b.className = "badge-tag";
-    b.textContent = badgeText;
-    checkoutBadges.appendChild(b);
-  });
 
   checkoutDurations.innerHTML = "";
   DURATIONS.forEach((duration, index) => {
