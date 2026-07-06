@@ -15,6 +15,10 @@ const PRODUCTS = [
     // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
     // пилюли поверх обложки assets/dystopia.png.
     badges: ["UNDETECTED"],
+    // Платформы, на которых работает продукт — рисуются мелкими иконками
+    // рядом с названием на карточке в магазине (см. PLATFORM_ICONS ниже).
+    // Доступные значения: "mobile", "pc".
+    platforms: ["mobile", "pc"],
   },
 ];
 
@@ -51,6 +55,21 @@ const XROCKET_CURRENCY = "$";
 // Иконка звезды (Telegram Stars) — используется вместо символа "★",
 // который выглядит по-разному в разных шрифтах/системах
 const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>`;
+
+// Иконки платформ (см. PRODUCTS[].platforms) — показываются мелким рядом
+// под названием товара на карточке в магазине, обозначая, на чём доступен
+// продукт. Стиль соответствует остальным line-иконкам интерфейса
+// (stroke=currentColor, stroke-width 1.8, скруглённые концы/стыки).
+const PLATFORM_ICONS = {
+  mobile: {
+    label: "Телефон",
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.2"/><path d="M11 18h2"/></svg>`,
+  },
+  pc: {
+    label: "Компьютер",
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`,
+  },
+};
 
 // ====== Инициализация Telegram WebApp ======
 const tg = window.Telegram?.WebApp;
@@ -281,6 +300,20 @@ function renderProducts() {
 
     node.querySelector(".card-hero-title").textContent = product.title;
     node.querySelector(".card-hero-subtitle").textContent = product.subtitle;
+
+    const platformsEl = node.querySelector(".card-hero-platforms");
+    if (platformsEl) {
+      (product.platforms || []).forEach((key) => {
+        const meta = PLATFORM_ICONS[key];
+        if (!meta) return;
+        const span = document.createElement("span");
+        span.className = "card-hero-platform";
+        span.title = meta.label;
+        span.setAttribute("aria-label", meta.label);
+        span.innerHTML = meta.svg;
+        platformsEl.appendChild(span);
+      });
+    }
 
     const priceValueEl = node.querySelector(".card-hero-price-value");
     if (priceValueEl) {
