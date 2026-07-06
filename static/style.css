@@ -659,6 +659,13 @@ body.keyboard-open .tabbar {
   white-space: nowrap;
 }
 
+.card-hero-badge--accent {
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+}
+
 .card-hero-price {
   position: absolute;
   top: 14px;
@@ -686,6 +693,12 @@ body.keyboard-open .tabbar {
   font-weight: 800;
   color: var(--text-main);
   white-space: nowrap;
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+.card-hero-price-value.is-fading {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .card-hero-footer {
@@ -2292,7 +2305,7 @@ body.keyboard-open .tabbar {
 }
 
 .checkout-hero,
-.description-card,
+.gallery-card,
 .view--checkout .option-group {
   /* opacity: 1 по умолчанию — контент ВСЕГДА виден, даже если анимация
      ниже по какой-то причине не запустится/не доиграет в конкретном
@@ -2309,7 +2322,7 @@ body.keyboard-open .tabbar {
    добавление/удаление класса гораздо надёжнее перезапускает CSS-анимацию
    в Telegram WebView, чем просто переключение display: none -> block. */
 .checkout-hero.co-anim-in,
-.description-card.co-anim-in,
+.gallery-card.co-anim-in,
 .view--checkout .option-group.co-anim-in {
   opacity: 0;
   animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -2340,17 +2353,17 @@ body.keyboard-open .tabbar {
   flex-shrink: 0;
   width: 64px;
   height: 64px;
-  border-radius: 16px;
+  border-radius: 20px;
   background: linear-gradient(160deg, #2a2a2f, #131315);
   border: 1px solid var(--border-soft);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 800;
-  color: var(--silver-2);
-  text-shadow: 0 0 14px rgba(255, 255, 255, 0.45);
+  overflow: hidden;
+}
+
+.checkout-hero-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .checkout-hero-info {
@@ -2369,28 +2382,82 @@ body.keyboard-open .tabbar {
   color: var(--text-dim);
 }
 
-.description-card {
+.gallery-card {
   background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
   border: 1px solid var(--border);
   border-radius: 18px;
-  padding: 18px 20px;
+  padding: 14px;
   margin-bottom: 10px;
 }
 
-.description-card-label {
-  display: block;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: 8px;
+.gallery-main {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
 }
 
-.description-card-text {
-  font-size: 13.5px;
-  line-height: 1.55;
-  color: var(--text-dim);
+.gallery-main img,
+.gallery-main video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gallery-thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 84px;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  background: #000;
+  cursor: pointer;
+}
+
+.gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-thumb--active {
+  border-color: var(--accent);
+}
+
+.gallery-thumb-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.gallery-thumb-play svg {
+  width: 22px;
+  height: 22px;
+  fill: #fff;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
 }
 
 /* ============ TAB BAR ============ */
