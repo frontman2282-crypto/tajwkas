@@ -664,7 +664,6 @@ const checkoutInitial = document.getElementById("checkoutInitial");
 const checkoutSubtitle = document.getElementById("checkoutSubtitle");
 const galleryMain = document.getElementById("galleryMain");
 const galleryMainImg = document.getElementById("galleryMainImg");
-const galleryMainVideo = document.getElementById("galleryMainVideo");
 const galleryThumbs = document.getElementById("galleryThumbs");
 const checkoutBadges = document.getElementById("checkoutBadges");
 const checkoutDurations = document.getElementById("checkoutDurations");
@@ -956,26 +955,9 @@ function playCheckoutEntrance() {
   }, 900);
 }
 
-// Переключает главный медиа-блок экрана оформления между скриншотом и
-// видео в зависимости от выбранной миниатюры.
-function setGalleryMedia(type, src, poster) {
-  if (type === "video") {
-    galleryMainImg.hidden = true;
-    galleryMainVideo.hidden = false;
-    if (poster) galleryMainVideo.setAttribute("poster", poster);
-    galleryMainVideo.src = src;
-    // .load() обязателен: просто присвоить .src недостаточно в некоторых
-    // WebView (в т.ч. в Telegram на Android) — без явного load() новое
-    // видео иногда не подхватывается и остаётся чёрный экран.
-    galleryMainVideo.load();
-  } else {
-    galleryMainVideo.pause();
-    galleryMainVideo.removeAttribute("src");
-    galleryMainVideo.load();
-    galleryMainVideo.hidden = true;
-    galleryMainImg.src = src;
-    galleryMainImg.hidden = false;
-  }
+// Показывает выбранный скриншот в главном окне галереи.
+function setGalleryMedia(src) {
+  galleryMainImg.src = src;
 }
 
 galleryThumbs.querySelectorAll(".gallery-thumb").forEach((thumb) => {
@@ -984,11 +966,7 @@ galleryThumbs.querySelectorAll(".gallery-thumb").forEach((thumb) => {
       .querySelectorAll(".gallery-thumb")
       .forEach((el) => el.classList.remove("gallery-thumb--active"));
     thumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(
-      thumb.dataset.mediaType,
-      thumb.dataset.mediaSrc,
-      thumb.dataset.poster
-    );
+    setGalleryMedia(thumb.dataset.mediaSrc);
     tg?.HapticFeedback?.selectionChanged();
   });
 });
@@ -1026,11 +1004,7 @@ function openCheckout(product, prefillPromoCode) {
     .forEach((el) => el.classList.remove("gallery-thumb--active"));
   if (firstThumb) {
     firstThumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(
-      firstThumb.dataset.mediaType,
-      firstThumb.dataset.mediaSrc,
-      firstThumb.dataset.poster
-    );
+    setGalleryMedia(firstThumb.dataset.mediaSrc);
   }
 
   checkoutBadges.innerHTML = "";
