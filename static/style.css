@@ -37,18 +37,18 @@
   --rarity-legendary-2: #ff8a3d;
   --rarity-legendary-glow: rgba(255, 154, 62, 0.55);
 
-  /* Фиолетовый акцентный градиент с тёмным свечением — для основных кнопок
-     действия (ОК, "Открыть кейс", "Использовать", "Применить"). */
-  --graphite-btn-1: #a89bff;
-  --graphite-btn-2: #7c6cf0;
-  --graphite-btn-3: #443b99;
-  --graphite-btn-glow: rgba(124, 108, 240, 0.55);
+  /* Тёмный графитово-чёрный градиент с приглушённым свечением — для
+     основных кнопок действия (ОК, "Открыть кейс", "Использовать", "Применить"). */
+  --graphite-btn-1: #3c3c44;
+  --graphite-btn-2: #1e1e23;
+  --graphite-btn-3: #08080a;
+  --graphite-btn-glow: rgba(0, 0, 0, 0.65);
 
-  /* Тёмно-фиолетовые кнопки — для способов оплаты, которые оформляются через
+  /* Почти чёрные кнопки — для способов оплаты, которые оформляются через
      личные сообщения (NFT, RU карта), и для основной кнопки покупки. */
-  --manual-btn-1: #5b4dc9;
-  --manual-btn-2: #362d80;
-  --manual-btn-3: #17133a;
+  --manual-btn-1: #26262c;
+  --manual-btn-2: #131316;
+  --manual-btn-3: #050506;
 
   --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -609,7 +609,7 @@ body.keyboard-open .tabbar {
 
 .card--hero {
   padding: 0;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 46px rgba(124, 108, 240, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .card-hero-btn {
@@ -726,8 +726,12 @@ body.keyboard-open .tabbar {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 18px 20px;
+  padding: 14px 20px;
   background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+}
+
+.card-hero-subtitle:empty {
+  display: none;
 }
 
 .card-hero-info {
@@ -1881,7 +1885,7 @@ body.keyboard-open .tabbar {
 
 .case-open-btn {
   width: 100%;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 14px;
   padding: 14px 18px;
   font-size: 15px;
@@ -1890,7 +1894,7 @@ body.keyboard-open .tabbar {
   color: #ffffff;
   text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
-  box-shadow: 0 8px 24px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  box-shadow: 0 8px 24px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
@@ -2175,7 +2179,7 @@ body.keyboard-open .tabbar {
   margin-top: 6px;
   padding: 13px 18px;
   border-radius: 14px;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
   color: #ffffff;
   text-shadow: 0 1px 2px rgba(0,0,0,0.35);
@@ -2404,6 +2408,10 @@ body.keyboard-open .tabbar {
 .checkout-hero-subtitle {
   font-size: 13px;
   color: var(--text-dim);
+}
+
+.checkout-hero-subtitle:empty {
+  display: none;
 }
 
 .gallery-card {
