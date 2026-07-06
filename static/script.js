@@ -218,16 +218,33 @@ function getStartingRubPrice() {
   return min.toLocaleString("ru-RU");
 }
 
+// Иконки для пилюли с ценой на карточке — те же самые SVG, что и в
+// способах оплаты на экране оформления (см. #paymentOptions в index.html),
+// чтобы звёзды/доллары/гривны/рубли выглядели одинаково везде.
+const HERO_PRICE_STAR_ICON =
+  '<svg class="card-hero-price-icon card-hero-price-icon--star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>';
+
+function heroPriceBadgeIcon(symbol) {
+  return (
+    '<svg class="card-hero-price-icon card-hero-price-icon--badge" viewBox="0 0 24 24" aria-hidden="true">' +
+    '<circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.15"/>' +
+    '<text x="12" y="17.5" text-anchor="middle" font-family="\'Golos Text\', Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">' +
+    symbol +
+    "</text></svg>"
+  );
+}
+
 // Пилюля с ценой на карточке магазина по очереди показывает стартовую
 // цену в каждом из способов оплаты (7-дневный тариф — самый дешёвый),
 // с плавной анимацией перехода между значениями (см. .card-hero-price-value
-// и класс .is-fading в style.css).
+// и класс .is-fading в style.css). Вместо слов "звёзд"/"грн" используем
+// те же SVG-иконки, что и в списке способов оплаты в тарифах.
 function buildHeroPriceCycle() {
   return [
-    `${getStartingRubPrice()} ₽`,
-    `${DURATIONS[0].price.toLocaleString("ru-RU")} звёзд`,
-    `${XROCKET_PRICES["7d"]}$`,
-    `${UAH_CARD_PRICES["7d"].toLocaleString("ru-RU")} грн`,
+    `${getStartingRubPrice()} ${heroPriceBadgeIcon("₽")}`,
+    `${DURATIONS[0].price.toLocaleString("ru-RU")} ${HERO_PRICE_STAR_ICON}`,
+    `${XROCKET_PRICES["7d"]} ${heroPriceBadgeIcon("$")}`,
+    `${UAH_CARD_PRICES["7d"].toLocaleString("ru-RU")} ${heroPriceBadgeIcon("₴")}`,
   ];
 }
 
@@ -270,13 +287,13 @@ function renderProducts() {
     if (priceValueEl) {
       const cycle = buildHeroPriceCycle();
       let cycleIndex = 0;
-      priceValueEl.textContent = cycle[cycleIndex];
+      priceValueEl.innerHTML = cycle[cycleIndex];
 
       const intervalId = setInterval(() => {
         priceValueEl.classList.add("is-fading");
         setTimeout(() => {
           cycleIndex = (cycleIndex + 1) % cycle.length;
-          priceValueEl.textContent = cycle[cycleIndex];
+          priceValueEl.innerHTML = cycle[cycleIndex];
           priceValueEl.classList.remove("is-fading");
         }, 260);
       }, 2200);
@@ -941,15 +958,20 @@ function playCheckoutEntrance() {
 
 // Переключает главный медиа-блок экрана оформления между скриншотом и
 // видео в зависимости от выбранной миниатюры.
-function setGalleryMedia(type, src) {
+function setGalleryMedia(type, src, poster) {
   if (type === "video") {
-    galleryMainVideo.pause();
-    galleryMainVideo.src = src;
-    galleryMainVideo.hidden = false;
     galleryMainImg.hidden = true;
+    galleryMainVideo.hidden = false;
+    if (poster) galleryMainVideo.setAttribute("poster", poster);
+    galleryMainVideo.src = src;
+    // .load() обязателен: просто присвоить .src недостаточно в некоторых
+    // WebView (в т.ч. в Telegram на Android) — без явного load() новое
+    // видео иногда не подхватывается и остаётся чёрный экран.
+    galleryMainVideo.load();
   } else {
     galleryMainVideo.pause();
     galleryMainVideo.removeAttribute("src");
+    galleryMainVideo.load();
     galleryMainVideo.hidden = true;
     galleryMainImg.src = src;
     galleryMainImg.hidden = false;
@@ -962,7 +984,11 @@ galleryThumbs.querySelectorAll(".gallery-thumb").forEach((thumb) => {
       .querySelectorAll(".gallery-thumb")
       .forEach((el) => el.classList.remove("gallery-thumb--active"));
     thumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(thumb.dataset.mediaType, thumb.dataset.mediaSrc);
+    setGalleryMedia(
+      thumb.dataset.mediaType,
+      thumb.dataset.mediaSrc,
+      thumb.dataset.poster
+    );
     tg?.HapticFeedback?.selectionChanged();
   });
 });
@@ -1000,7 +1026,11 @@ function openCheckout(product, prefillPromoCode) {
     .forEach((el) => el.classList.remove("gallery-thumb--active"));
   if (firstThumb) {
     firstThumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(firstThumb.dataset.mediaType, firstThumb.dataset.mediaSrc);
+    setGalleryMedia(
+      firstThumb.dataset.mediaType,
+      firstThumb.dataset.mediaSrc,
+      firstThumb.dataset.poster
+    );
   }
 
   checkoutBadges.innerHTML = "";
