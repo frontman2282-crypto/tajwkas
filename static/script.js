@@ -63,7 +63,7 @@ const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="t
 const PLATFORM_ICONS = {
   mobile: {
     label: "Телефон",
-    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.2"/><path d="M11 18h2"/></svg>`,
+    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2"/><path d="M10.5 5.2h3"/><path d="M11 18.6h2"/></svg>`,
   },
   pc: {
     label: "Компьютер",
