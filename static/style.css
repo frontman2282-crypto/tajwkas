@@ -37,18 +37,18 @@
   --rarity-legendary-2: #ff8a3d;
   --rarity-legendary-glow: rgba(255, 154, 62, 0.55);
 
-  /* Графитово-серый градиент с мягким свечением — для основных кнопок
+  /* Фиолетовый акцентный градиент с тёмным свечением — для основных кнопок
      действия (ОК, "Открыть кейс", "Использовать", "Применить"). */
-  --graphite-btn-1: #d4d6dc;
-  --graphite-btn-2: #8b8f9b;
-  --graphite-btn-3: #5a5d68;
-  --graphite-btn-glow: rgba(180, 186, 199, 0.35);
+  --graphite-btn-1: #a89bff;
+  --graphite-btn-2: #7c6cf0;
+  --graphite-btn-3: #443b99;
+  --graphite-btn-glow: rgba(124, 108, 240, 0.55);
 
-  /* Тёмно-серые кнопки — для способов оплаты, которые оформляются через
+  /* Тёмно-фиолетовые кнопки — для способов оплаты, которые оформляются через
      личные сообщения (NFT, RU карта), и для основной кнопки покупки. */
-  --manual-btn-1: #48484f;
-  --manual-btn-2: #29292d;
-  --manual-btn-3: #18181b;
+  --manual-btn-1: #5b4dc9;
+  --manual-btn-2: #362d80;
+  --manual-btn-3: #17133a;
 
   --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
@@ -609,6 +609,7 @@ body.keyboard-open .tabbar {
 
 .card--hero {
   padding: 0;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 46px rgba(124, 108, 240, 0.18), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .card-hero-btn {
@@ -1002,7 +1003,8 @@ body.keyboard-open .tabbar {
   border-radius: 12px;
   border: none;
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
-  color: #14151a;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   font-family: var(--font-body);
   font-size: 13px;
   font-weight: 700;
@@ -1543,7 +1545,8 @@ body.keyboard-open .tabbar {
   border-radius: 11px;
   border: none;
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
-  color: #14151a;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   font-family: var(--font-body);
   font-size: 12.5px;
   font-weight: 700;
@@ -1884,7 +1887,8 @@ body.keyboard-open .tabbar {
   font-size: 15px;
   font-weight: 800;
   font-family: var(--font-body);
-  color: #14151a;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
   box-shadow: 0 8px 24px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
   cursor: pointer;
@@ -2173,7 +2177,8 @@ body.keyboard-open .tabbar {
   border-radius: 14px;
   border: none;
   background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
-  color: #14151a;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
   font-family: var(--font-body);
   font-size: 14.5px;
   font-weight: 700;
