@@ -175,7 +175,7 @@ PRODUCTS = {
 # (см. проверку ниже в create_invoice_handler / create_invoice_xrocket_handler),
 # даже если кто-то попробует обратиться к API напрямую, минуя интерфейс.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 1, "available": True},
+    "7d": {"label": "7 дней", "price": 300, "available": True},
     "30d": {"label": "30 дней", "price": 500, "available": False},
     "12m": {"label": "12 месяцев", "price": 4000, "available": False},
 }
@@ -314,7 +314,11 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 # выдаются строго по очереди (сначала "test", потом "test2" и т.д.), и
 # каждый ключ может быть выдан только ОДИН раз, любому из покупателей.
 # Как только ключ выдан — он больше никому не достанется повторно.
-ACCESS_KEYS: list[str] = ["test", "test2", "test3", "test4"]
+ACCESS_KEYS: list[str] = [
+    "DYST-SBF36-100YG-11P44-GSXTJ",
+    "DYST-3GC7W-QXW5W-5KH5T-8M1GE",
+    "DYST-E9196-8JTHN-R66P5-6Z5B0",
+]
 
 # Ссылка, которая отправляется покупателю вместе с ключом (в сообщении
 # "Файл тут: ..."). Поменяй на актуальную ссылку, если она изменится.
