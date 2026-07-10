@@ -14,21 +14,22 @@ const PRODUCTS = [
     logo: "assets/dystlogo.png",
     // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
     // пилюли поверх обложки assets/dystopia.png.
-    badges: ["UNDETECTED"],
+    badges: ["UNDETECTED", "ROOT"],
     // Платформы, на которых работает продукт — рисуются мелкими иконками
     // рядом с названием на карточке в магазине (см. PLATFORM_ICONS ниже).
     // Доступные значения: "mobile", "pc".
-    platforms: ["mobile", "pc"],
+    platforms: ["pc"],
   },
 ];
 
 // Сроки доступа — должны совпадать с DURATIONS в bot.py.
 // Цены указаны в звёздах (Telegram Stars) — поменяй значения price
-// на свои под каждый тариф.
+// на свои под каждый тариф. available: false — тариф "нет в наличии":
+// показывается в списке, но красным цветом и недоступен для выбора/покупки.
 const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 300 },
-  { code: "30d", label: "30 дней", price: 500 },
-  { code: "12m", label: "12 месяцев", price: 4000 },
+  { code: "7d", label: "7 дней", price: 1 },
+  { code: "30d", label: "30 дней", price: 500, available: false },
+  { code: "12m", label: "12 месяцев", price: 4000, available: false },
 ];
 
 // Цены в рублях при оплате способом "RU карта" — оформляется вручную
@@ -288,12 +289,13 @@ function renderProducts() {
     (product.badges || []).forEach((badgeText) => {
       const b = document.createElement("span");
       // UNDETECTED — статус безопасности, выделяем его зелёным, как
-      // положительный индикатор. Остальные возможные бейджи остаются
-      // в нейтральном тёмном стиле.
-      b.className =
-        badgeText === "UNDETECTED"
-          ? "card-hero-badge card-hero-badge--accent"
-          : "card-hero-badge";
+      // положительный индикатор. ROOT — предупреждающий статус (нужен
+      // root-доступ), выделяем его красным по тому же принципу. Остальные
+      // возможные бейджи остаются в нейтральном тёмном стиле.
+      let badgeClass = "card-hero-badge";
+      if (badgeText === "UNDETECTED") badgeClass += " card-hero-badge--accent";
+      else if (badgeText === "ROOT") badgeClass += " card-hero-badge--danger";
+      b.className = badgeClass;
       b.textContent = badgeText;
       badgesEl.appendChild(b);
     });
@@ -400,6 +402,15 @@ function updateBuyButtonLabel(buyBtnText, product, durationCode) {
 // нет фиксированной цены, поэтому скидку тут не считаем).
 function applyDurationPrice(priceEl, duration) {
   if (!priceEl) return;
+
+  if (duration.available === false) {
+    priceEl.classList.remove("duration-option-price--note");
+    priceEl.classList.remove("duration-option-price--discounted");
+    priceEl.classList.add("duration-option-price--unavailable");
+    priceEl.textContent = "Нет в наличии";
+    return;
+  }
+  priceEl.classList.remove("duration-option-price--unavailable");
 
   if (checkoutPaymentMethod === "nft") {
     priceEl.classList.add("duration-option-price--note");
@@ -633,6 +644,17 @@ async function handleBuyXRocket(product, durationCode, buyBtn, buyBtnText, statu
 async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
   if (!tg) {
     setCardStatus(statusEl, "Открой это приложение внутри Telegram", "error");
+    return;
+  }
+
+  const selectedDuration = DURATIONS.find((d) => d.code === durationCode);
+  if (selectedDuration && selectedDuration.available === false) {
+    setCardStatus(statusEl, "Этот тариф сейчас нет в наличии", "error");
+    return;
+  }
+
+  if (!checkoutStockAvailable) {
+    setCardStatus(statusEl, "Товар временно нет в наличии — все ключи раскуплены", "error");
     return;
   }
 
@@ -1003,6 +1025,54 @@ let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
 let checkoutPromoCode = null;
 let checkoutDiscountPercent = 0;
+// Доступность ключей на складе (см. /stock_status в bot.py). true, пока не
+// доказано обратное — чтобы не мигать "нет в наличии" раньше времени, пока
+// ответ сервера ещё не пришёл.
+let checkoutStockAvailable = true;
+
+// Спрашивает у сервера, остались ли свободные ключи для товара. Не
+// блокирует открытие экрана оформления — вызывается уже после его показа,
+// и просто дорисовывает "нет в наличии" поверх, если ключи закончились.
+async function checkStockStatus(productId) {
+  try {
+    const response = await fetch(`/stock_status?product_id=${encodeURIComponent(productId)}`);
+    if (!response.ok) return true;
+    const data = await response.json();
+    return data.available !== false;
+  } catch (err) {
+    // Если ручка недоступна (например, старый бэкенд) — не блокируем
+    // покупку из-за сетевой ошибки, реальную проверку всё равно делает
+    // сервер при создании инвойса.
+    return true;
+  }
+}
+
+// Перекрашивает все ещё "доступные по конфигу" тарифы в "Нет в наличии",
+// когда реальный склад ключей (ACCESS_KEYS в bot.py) опустел, и блокирует
+// кнопки покупки — прямо на экране оформления, до попытки оплаты.
+function applyStockUnavailableUI() {
+  checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
+    const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
+    // Тарифы, уже помеченные available:false в конфиге, и так показывают
+    // "Нет в наличии" — трогать их незачем.
+    if (!duration || duration.available === false) return;
+
+    btn.classList.add("duration-option--disabled");
+    btn.disabled = true;
+    btn.setAttribute("aria-disabled", "true");
+
+    const priceEl = btn.querySelector(".duration-option-price");
+    if (priceEl) {
+      priceEl.classList.remove("duration-option-price--note", "duration-option-price--discounted");
+      priceEl.classList.add("duration-option-price--unavailable");
+      priceEl.textContent = "Нет в наличии";
+    }
+  });
+
+  checkoutBuyBtn.disabled = true;
+  checkoutManualBtn.disabled = true;
+  setCardStatus(checkoutStatus, "Все ключи раскуплены — товар временно нет в наличии", "error");
+}
 
 function openCheckout(product, prefillPromoCode) {
   playCheckoutEntrance();
@@ -1011,6 +1081,7 @@ function openCheckout(product, prefillPromoCode) {
   checkoutDuration = DURATIONS[0].code;
   checkoutPromoCode = null;
   checkoutDiscountPercent = 0;
+  checkoutStockAvailable = true;
   checkoutPromoInput.value = "";
   checkoutPromoApply.textContent = "Применить";
   checkoutPromoApply.classList.remove("promo-apply-btn--applied");
@@ -1038,7 +1109,11 @@ function openCheckout(product, prefillPromoCode) {
     const dNode = durationTemplate.content.cloneNode(true);
     const dBtn = dNode.querySelector(".duration-option");
     dBtn.dataset.duration = duration.code;
+    const isAvailable = duration.available !== false;
     dBtn.classList.toggle("duration-option--selected", index === 0);
+    dBtn.classList.toggle("duration-option--disabled", !isAvailable);
+    dBtn.disabled = !isAvailable;
+    if (!isAvailable) dBtn.setAttribute("aria-disabled", "true");
     dNode.querySelector(".duration-option-label").textContent = duration.label;
     applyDurationPrice(dNode.querySelector(".duration-option-price"), duration);
     checkoutDurations.appendChild(dNode);
@@ -1049,6 +1124,17 @@ function openCheckout(product, prefillPromoCode) {
   setCardStatus(checkoutStatus, "");
 
   switchView("checkout");
+
+  // Проверяем реальный остаток ключей уже после того, как экран показан —
+  // если ключи закончились, дорисовываем "Нет в наличии" поверх тарифов.
+  checkStockStatus(product.id).then((available) => {
+    checkoutStockAvailable = available;
+    // Пользователь мог уже уйти с этого товара, пока ответ шёл — не
+    // перекрашиваем чужой экран.
+    if (!available && checkoutProduct === product) {
+      applyStockUnavailableUI();
+    }
+  });
 
   // Если экран открыт с уже готовым промокодом (например, по кнопке
   // "Использовать" из "Моих промокодов") — подставляем его в поле и сразу
@@ -1062,6 +1148,7 @@ function openCheckout(product, prefillPromoCode) {
 checkoutDurations.addEventListener("click", (e) => {
   const btn = e.target.closest(".duration-option");
   if (!btn || !checkoutProduct) return;
+  if (btn.disabled || btn.classList.contains("duration-option--disabled")) return;
 
   checkoutDurations.querySelectorAll(".duration-option").forEach((b) => {
     b.classList.toggle("duration-option--selected", b === btn);
