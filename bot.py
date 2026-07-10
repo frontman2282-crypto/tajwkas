@@ -72,6 +72,7 @@ import hashlib
 import hmac
 import json
 import logging
+import asyncio
 import math
 import random
 import string
@@ -170,10 +171,13 @@ PRODUCTS = {
 # Доступные сроки доступа и их цена в звёздах (Telegram Stars).
 # Коды ("7d", "30d", "12m") должны совпадать с DURATIONS в script.js —
 # именно они прилетают в payload инвойса и в successful_payment.
+# available: False — тариф "нет в наличии": инвойс на него не создаётся
+# (см. проверку ниже в create_invoice_handler / create_invoice_xrocket_handler),
+# даже если кто-то попробует обратиться к API напрямую, минуя интерфейс.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 300},
-    "30d": {"label": "30 дней", "price": 500},
-    "12m": {"label": "12 месяцев", "price": 4000},
+    "7d": {"label": "7 дней", "price": 1, "available": True},
+    "30d": {"label": "30 дней", "price": 500, "available": False},
+    "12m": {"label": "12 месяцев", "price": 4000, "available": False},
 }
 
 # ====== Промокоды ======
@@ -303,6 +307,77 @@ def _save_xrocket_invoices() -> None:
 
 
 XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
+
+
+# ====== Ключи доступа, выдаваемые автоматически после оплаты ======
+# Список доступных ключей — ЗАМЕНИ на реальные ключи товара. Порядок важен:
+# выдаются строго по очереди (сначала "test", потом "test2" и т.д.), и
+# каждый ключ может быть выдан только ОДИН раз, любому из покупателей.
+# Как только ключ выдан — он больше никому не достанется повторно.
+ACCESS_KEYS: list[str] = ["test", "test2", "test3", "test4"]
+
+# Ссылка, которая отправляется покупателю вместе с ключом (в сообщении
+# "Файл тут: ..."). Поменяй на актуальную ссылку, если она изменится.
+DELIVERY_FILE_LINK = os.environ.get(
+    "DELIVERY_FILE_LINK", "https://t.me/+6Egjv4VK5IplYTY6"
+)
+
+# Хранилище выданных ключей: ключ (из ACCESS_KEYS) -> {"user_id": int|None,
+# "product_id": str, "duration_code": str, "issued_at": float}.
+# Переживает рестарты процесса (как и остальные хранилища выше).
+ISSUED_KEYS_PATH = os.environ.get("ISSUED_KEYS_PATH", "issued_keys.json")
+
+
+def _load_issued_keys() -> dict[str, dict]:
+    try:
+        with open(ISSUED_KEYS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_issued_keys() -> None:
+    try:
+        with open(ISSUED_KEYS_PATH, "w", encoding="utf-8") as f:
+            json.dump(ISSUED_KEYS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", ISSUED_KEYS_PATH)
+
+
+ISSUED_KEYS: dict[str, dict] = _load_issued_keys()
+
+# Лок нужен, чтобы при одновременном подтверждении двух оплат (например,
+# звёзды и xRocket почти одновременно) один и тот же ключ не выдался
+# дважды разным людям — без лока обе оплаты могли бы одновременно увидеть
+# ключ свободным и выдать его дважды.
+_KEY_ISSUE_LOCK = asyncio.Lock()
+
+
+async def issue_next_key(user_id: int | None, product_id: str, duration_code: str) -> str | None:
+    """Атомарно выдаёт следующий свободный ключ из ACCESS_KEYS (строго по
+    порядку) и помечает его выданным, чтобы он не достался никому ещё раз.
+    Возвращает None, если свободных ключей больше нет."""
+    async with _KEY_ISSUE_LOCK:
+        for key in ACCESS_KEYS:
+            if key not in ISSUED_KEYS:
+                ISSUED_KEYS[key] = {
+                    "user_id": user_id,
+                    "product_id": product_id,
+                    "duration_code": duration_code,
+                    "issued_at": time.time(),
+                }
+                _save_issued_keys()
+                return key
+    return None
+
+
+def has_available_key() -> bool:
+    """Проверяет, остался ли хоть один свободный (ещё не выданный) ключ в
+    ACCESS_KEYS. Используется, чтобы показать на фронтенде "нет в наличии",
+    как только ключи закончатся, а также как дополнительная защита в
+    ручках создания инвойса — чтобы нельзя было оплатить товар, если
+    выдать по факту уже нечего."""
+    return any(key not in ISSUED_KEYS for key in ACCESS_KEYS)
 
 
 # ====== Забаненные пользователи (админ-панель) ======
@@ -743,16 +818,48 @@ async def grant_product_purchase(
     if user_id is None:
         return
 
-    # ЗДЕСЬ выдаёшь товар пользователю: открываешь доступ, шлёшь файл/ссылку и т.д.
+    # Выдаём ключ доступа: до этого места функция вызывается ТОЛЬКО после
+    # 100% подтверждённой оплаты — звёздами (Telegram сам прислал
+    # successful_payment) или через xRocket (подпись вебхука проверена,
+    # статус "paid"). Ключ берётся из ACCESS_KEYS строго по очереди и
+    # больше никогда никому не выдаётся повторно (issue_next_key
+    # запоминает выданные ключи в ISSUED_KEYS).
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
+    key = await issue_next_key(user_id, product_id, duration_code)
+
     try:
-        await bot.send_message(
-            user_id,
-            f"Оплата получена: {amount_label}\n"
-            f"Товар «{product_id}»{duration_text} выдан. Спасибо за покупку!",
-        )
+        if key is not None:
+            await bot.send_message(
+                user_id,
+                f"Оплата получена: {amount_label}\n"
+                f"Товар «{product_id}»{duration_text} выдан. Спасибо за покупку!\n\n"
+                f"Файл тут: {DELIVERY_FILE_LINK}\n"
+                f"Ваш ключ: <code>{key}</code>",
+                parse_mode="HTML",
+            )
+        else:
+            # Ключи закончились — сообщаем и покупателю, и админу, чтобы
+            # ключ выдали вручную и пополнили ACCESS_KEYS.
+            await bot.send_message(
+                user_id,
+                f"Оплата получена: {amount_label}\n"
+                f"Товар «{product_id}»{duration_text} оплачен, но свободные ключи "
+                f"закончились. Мы выдадим ключ вручную в ближайшее время, "
+                f"напишите, пожалуйста, в поддержку.",
+            )
     except Exception:
         logging.exception("Не удалось отправить сообщение о выдаче товара пользователю %s", user_id)
+
+    if key is None:
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                f"⚠️ Закончились ключи доступа! Покупатель {user_id} оплатил "
+                f"«{product_id}»{duration_text} ({amount_label}), но свободного "
+                f"ключа из ACCESS_KEYS не нашлось. Выдай ключ вручную и пополни список.",
+            )
+        except Exception:
+            logging.exception("Не удалось уведомить админа о закончившихся ключах")
 
 
 async def grant_case_reward(user_id: int | None, amount_label: str) -> None:
@@ -863,7 +970,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "bad json"}, status=400)
 
     product_id = data.get("product_id")
-    duration_code = data.get("duration", "30d")
+    duration_code = data.get("duration", "7d")
     promo_code_raw = data.get("promo_code")
 
     # Дополнительная защита: даже если забаненный пользователь как-то
@@ -880,6 +987,10 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown product"}, status=404)
     if not duration:
         return web.json_response({"error": "unknown duration"}, status=404)
+    if not duration.get("available", True):
+        return web.json_response({"error": "duration unavailable"}, status=409)
+    if not has_available_key():
+        return web.json_response({"error": "out_of_stock"}, status=409)
 
     # ВАЖНО: цену считаем только на бэкенде, по своей таблице цен и
     # промокодов. Клиенту нельзя доверять — он не присылает готовую цену,
@@ -941,7 +1052,7 @@ async def create_invoice_xrocket_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "bad json"}, status=400)
 
     product_id = data.get("product_id")
-    duration_code = data.get("duration", "30d")
+    duration_code = data.get("duration", "7d")
     promo_code_raw = data.get("promo_code")
 
     user_id, ban_username = resolve_user(data.get("init_data"))
@@ -958,6 +1069,10 @@ async def create_invoice_xrocket_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown product"}, status=404)
     if not duration or base_price is None:
         return web.json_response({"error": "unknown duration"}, status=404)
+    if not duration.get("available", True):
+        return web.json_response({"error": "duration unavailable"}, status=409)
+    if not has_available_key():
+        return web.json_response({"error": "out_of_stock"}, status=409)
 
     final_price, promo = apply_promo_float(base_price, promo_code_raw)
     promo_applied = promo is not None
@@ -1332,6 +1447,14 @@ async def validate_promo_handler(request: web.Request) -> web.Response:
         "valid": promo is not None,
         "discount_percent": discount_percent if promo else 0,
     })
+
+
+async def stock_status_handler(request: web.Request) -> web.Response:
+    """Отдаёт фронтенду, остались ли ещё свободные ключи доступа. Дёргается
+    при открытии экрана оформления (см. checkStockStatus в script.js), чтобы
+    показать "Нет в наличии", если все ключи из ACCESS_KEYS уже раскуплены —
+    ещё до попытки оплаты."""
+    return web.json_response({"available": has_available_key()})
 
 
 async def check_ban_handler(request: web.Request) -> web.Response:
@@ -1742,6 +1865,7 @@ def build_web_app() -> web.Application:
     app.router.add_post("/delete_promo_codes", delete_promo_codes_handler)
     app.router.add_post("/delete_all_promo_codes", delete_all_promo_codes_handler)
     app.router.add_get("/validate_promo", validate_promo_handler)
+    app.router.add_get("/stock_status", stock_status_handler)
     app.router.add_post("/check_ban", check_ban_handler)
     app.router.add_post("/admin/ban", admin_ban_handler)
     app.router.add_post("/admin/unban", admin_unban_handler)
