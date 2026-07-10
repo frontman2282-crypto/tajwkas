@@ -324,27 +324,11 @@ DELIVERY_FILE_LINK = os.environ.get(
 
 # Хранилище выданных ключей: ключ (из ACCESS_KEYS) -> {"user_id": int|None,
 # "product_id": str, "duration_code": str, "issued_at": float}.
-# Переживает рестарты процесса (как и остальные хранилища выше).
-ISSUED_KEYS_PATH = os.environ.get("ISSUED_KEYS_PATH", "issued_keys.json")
-
-
-def _load_issued_keys() -> dict[str, dict]:
-    try:
-        with open(ISSUED_KEYS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-
-def _save_issued_keys() -> None:
-    try:
-        with open(ISSUED_KEYS_PATH, "w", encoding="utf-8") as f:
-            json.dump(ISSUED_KEYS, f, ensure_ascii=False, indent=2)
-    except OSError:
-        logging.exception("Не удалось сохранить %s", ISSUED_KEYS_PATH)
-
-
-ISSUED_KEYS: dict[str, dict] = _load_issued_keys()
+# Живёт просто в памяти процесса, никуда на диск не пишется — при
+# рестарте бота обнуляется (все ключи из ACCESS_KEYS снова считаются
+# свободными). Если понадобится сохранять между рестартами — придётся
+# завести файл или базу, но по просьбе — без файла.
+ISSUED_KEYS: dict[str, dict] = {}
 
 # Лок нужен, чтобы при одновременном подтверждении двух оплат (например,
 # звёзды и xRocket почти одновременно) один и тот же ключ не выдался
@@ -366,7 +350,6 @@ async def issue_next_key(user_id: int | None, product_id: str, duration_code: st
                     "duration_code": duration_code,
                     "issued_at": time.time(),
                 }
-                _save_issued_keys()
                 return key
     return None
 
