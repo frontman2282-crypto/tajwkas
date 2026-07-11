@@ -29,7 +29,7 @@ const PRODUCTS = [
 const DURATIONS = [
   { code: "7d", label: "7 дней", price: 1 },
   { code: "30d", label: "30 дней", price: 500 },
-  { code: "12m", label: "12 месяцев", price: 4000, available: false },
+  { code: "12m", label: "12 месяцев", price: 4000 },
 ];
 
 // Цены в рублях при оплате способом "RU карта" — оформляется вручную
