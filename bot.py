@@ -318,9 +318,9 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 # ключ может быть выдан только ОДИН раз, любому из покупателей. Как только
 # ключ выдан — он больше никому не достанется повторно.
 ACCESS_KEYS: list[str] = [
-    "DYST-SBF36-100YG-11P44-GSXTJ",
-    "DYST-3GC7W-QXW5W-5KH5T-8M1GE",
-    "DYST-E9196-8JTHN-R66P5-6Z5B0",
+    # Первые 3 ключа (DYST-SBF36-..., DYST-3GC7W-..., DYST-E9196-...) были
+    # выданы покупателям и удалены из списка по просьбе владельца — новые
+    # ключи добавляются через админ-панель (EXTRA_ACCESS_KEYS).
 ]
 
 # Ключи, добавленные владельцем/админом через админ-панель в рантайме (без
@@ -1807,7 +1807,23 @@ async def admin_keys_add_handler(request: web.Request) -> web.Response:
     EXTRA_ACCESS_KEYS.append(raw_key)
     _save_extra_access_keys()
 
-    return web.json_response({"key": raw_key, "total": len(all_access_keys())})
+    # Если раньше товар был вручную переключён в "нет в наличии" (например,
+    # когда закончились ключи) — теперь, когда добавлен новый ключ, снимаем
+    # этот ручной оверрайд, чтобы наличие снова считалось автоматически по
+    # реальному остатку ключей. Без этого добавленный ключ не выдавался бы:
+    # STOCK_OVERRIDE=False всегда главнее фактического наличия ключей (см.
+    # has_available_key).
+    product_id = str(body.get("product_id", "dystopia"))
+    if STOCK_OVERRIDE.get(product_id) is False:
+        STOCK_OVERRIDE.pop(product_id, None)
+        _save_stock_override()
+
+    return web.json_response({
+        "key": raw_key,
+        "total": len(all_access_keys()),
+        "stock_override": STOCK_OVERRIDE.get(product_id),
+        "effective_available": has_available_key(product_id),
+    })
 
 
 async def admin_keys_delete_handler(request: web.Request) -> web.Response:
