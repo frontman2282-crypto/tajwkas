@@ -28,7 +28,7 @@ const PRODUCTS = [
 // показывается в списке, но красным цветом и недоступен для выбора/покупки.
 const DURATIONS = [
   { code: "7d", label: "7 дней", price: 1 },
-  { code: "30d", label: "30 дней", price: 500 },
+  { code: "30d", label: "30 дней", price: 1 },
   { code: "12m", label: "12 месяцев", price: 4000 },
 ];
 
