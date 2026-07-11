@@ -253,7 +253,11 @@ body.keyboard-open .tabbar {
 
 /* Сама бренд-марка: тёмный графитовый градиент вместо плоского белого
    кружка, с иконкой лавки внутри — перекликается с иконкой вкладки
-   "Магазин" в нижней навигации */
+   "Магазин" в нижней навигации.
+   Цвета здесь намеренно ЗАФИКСИРОВАНЫ (не через var(--bg-...)), а не
+   подстраиваются под тему: это фирменный значок-бейдж, а не часть фона.
+   Если сделать его светлым в светлой теме — белая иконка "магазина"
+   внутри (см. #splashGlyphGrad ниже) станет не видна на светлом кружке. */
 .splash-circle {
   position: absolute;
   inset: 10px;
@@ -261,7 +265,7 @@ body.keyboard-open .tabbar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: radial-gradient(circle at 50% 30%, var(--bg-graphite-deep) 0%, var(--bg-graphite-mid) 55%, var(--bg-black) 100%);
+  background: radial-gradient(circle at 50% 30%, #131315 0%, #0c0c0e 55%, #050506 100%);
   box-shadow:
     0 0 18px rgba(210, 210, 220, 0.18),
     0 0 32px rgba(0, 0, 0, 0.5),
@@ -275,12 +279,15 @@ body.keyboard-open .tabbar {
   filter: drop-shadow(0 0 6px rgba(230, 230, 236, 0.35));
 }
 
-/* Вращающийся ободок-спиннер поверх кружка — создаёт ощущение "грузится" */
+/* Вращающийся ободок-спиннер поверх кружка — создаёт ощущение "грузится".
+   Цвета зафиксированы светлыми (не var(--silver-...)) по той же причине,
+   что и у .splash-circle — спиннер должен быть виден на тёмном кружке
+   вне зависимости от текущей темы приложения. */
 .splash-spinner {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: conic-gradient(from 0deg, transparent 0deg, transparent 210deg, var(--silver-2) 300deg, var(--silver-1) 340deg, transparent 360deg);
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 210deg, #f1f1f4 300deg, #b6b6bf 340deg, transparent 360deg);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
   filter: drop-shadow(0 0 8px rgba(230, 230, 236, 0.55));
@@ -304,7 +311,7 @@ body.keyboard-open .tabbar {
   height: 5px;
   margin-left: -2.5px;
   border-radius: 50%;
-  background: var(--silver-2);
+  background: #f1f1f4;
   box-shadow: 0 0 8px 2px rgba(241, 241, 244, 0.7);
 }
 
@@ -1590,6 +1597,10 @@ body.theme-light .bg-glow--top,
 body.theme-light .bg-glow--bottom,
 body.theme-light .bg-glow--mid {
   opacity: 0.08;
+}
+
+body.theme-light .splash-progress {
+  background: rgba(0, 0, 0, 0.08);
 }
 
 /* ============ ЭКРАН "МОИ ПРОМОКОДЫ" ============ */
