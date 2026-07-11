@@ -175,7 +175,7 @@ PRODUCTS = {
 # (см. проверку ниже в create_invoice_handler / create_invoice_xrocket_handler),
 # даже если кто-то попробует обратиться к API напрямую, минуя интерфейс.
 DURATIONS = {
-    "7d": {"label": "7 дней", "price": 300, "available": True},
+    "7d": {"label": "7 дней", "price": 1, "available": True},
     "30d": {"label": "30 дней", "price": 500, "available": False},
     "12m": {"label": "12 месяцев", "price": 4000, "available": False},
 }
@@ -310,15 +310,81 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 
 
 # ====== Ключи доступа, выдаваемые автоматически после оплаты ======
-# Список доступных ключей — ЗАМЕНИ на реальные ключи товара. Порядок важен:
-# выдаются строго по очереди (сначала "test", потом "test2" и т.д.), и
-# каждый ключ может быть выдан только ОДИН раз, любому из покупателей.
-# Как только ключ выдан — он больше никому не достанется повторно.
+# Список доступных ключей, зашитый в код — начальный набор. Дополнительные
+# ключи можно добавлять через админ-панель (кнопка "Добавить ключ" на
+# вкладке "Ключи доступа") — они хранятся отдельно, в EXTRA_ACCESS_KEYS
+# (см. ниже), и не требуют деплоя. Порядок важен: ключи выдаются строго по
+# очереди (сначала из ACCESS_KEYS, потом из EXTRA_ACCESS_KEYS), и каждый
+# ключ может быть выдан только ОДИН раз, любому из покупателей. Как только
+# ключ выдан — он больше никому не достанется повторно.
 ACCESS_KEYS: list[str] = [
     "DYST-SBF36-100YG-11P44-GSXTJ",
     "DYST-3GC7W-QXW5W-5KH5T-8M1GE",
     "DYST-E9196-8JTHN-R66P5-6Z5B0",
 ]
+
+# Ключи, добавленные владельцем/админом через админ-панель в рантайме (без
+# деплоя). Хранятся отдельно от ACCESS_KEYS и переживают рестарты — только
+# если каталог, где лежит EXTRA_ACCESS_KEYS_PATH, смонтирован как
+# persistent volume (см. инструкцию для Railway).
+EXTRA_ACCESS_KEYS_PATH = os.environ.get(
+    "EXTRA_ACCESS_KEYS_PATH", "extra_access_keys.json"
+)
+
+
+def _load_extra_access_keys() -> list[str]:
+    try:
+        with open(EXTRA_ACCESS_KEYS_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data if isinstance(data, list) else []
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def _save_extra_access_keys() -> None:
+    try:
+        with open(EXTRA_ACCESS_KEYS_PATH, "w", encoding="utf-8") as f:
+            json.dump(EXTRA_ACCESS_KEYS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", EXTRA_ACCESS_KEYS_PATH)
+
+
+EXTRA_ACCESS_KEYS: list[str] = _load_extra_access_keys()
+
+
+def all_access_keys() -> list[str]:
+    """Полный список ключей на выдачу: сначала зашитые в код (ACCESS_KEYS),
+    потом добавленные через админ-панель (EXTRA_ACCESS_KEYS), в порядке
+    добавления."""
+    return ACCESS_KEYS + EXTRA_ACCESS_KEYS
+
+
+# Ручной переключатель "в наличии / нет в наличии" из админ-панели. Если
+# None — наличие считается автоматически (есть ли хоть один невыданный
+# ключ). Если True/False — админ явно задал состояние вручную, и оно
+# главнее автоматического подсчёта (например, чтобы скрыть Stars/xRocket
+# заранее, не дожидаясь, пока реально кончатся ключи, или наоборот —
+# показать "в наличии", пока новые ключи ещё не добавлены).
+STOCK_OVERRIDE_PATH = os.environ.get("STOCK_OVERRIDE_PATH", "stock_override.json")
+
+
+def _load_stock_override() -> dict[str, bool]:
+    try:
+        with open(STOCK_OVERRIDE_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_stock_override() -> None:
+    try:
+        with open(STOCK_OVERRIDE_PATH, "w", encoding="utf-8") as f:
+            json.dump(STOCK_OVERRIDE, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", STOCK_OVERRIDE_PATH)
+
+
+STOCK_OVERRIDE: dict[str, bool] = _load_stock_override()
 
 # Ссылка, которая отправляется покупателю вместе с ключом (в сообщении
 # "Файл тут: ..."). Поменяй на актуальную ссылку, если она изменится.
@@ -406,7 +472,7 @@ async def issue_next_key(
         if payment_id is not None and payment_id in PROCESSED_PAYMENTS:
             return PROCESSED_PAYMENTS[payment_id]
 
-        for key in ACCESS_KEYS:
+        for key in all_access_keys():
             if key not in ISSUED_KEYS:
                 ISSUED_KEYS[key] = {
                     "user_id": user_id,
@@ -426,13 +492,15 @@ async def issue_next_key(
     return None
 
 
-def has_available_key() -> bool:
-    """Проверяет, остался ли хоть один свободный (ещё не выданный) ключ в
-    ACCESS_KEYS. Используется, чтобы показать на фронтенде "нет в наличии",
-    как только ключи закончатся, а также как дополнительная защита в
-    ручках создания инвойса — чтобы нельзя было оплатить товар, если
-    выдать по факту уже нечего."""
-    return any(key not in ISSUED_KEYS for key in ACCESS_KEYS)
+def has_available_key(product_id: str = "dystopia") -> bool:
+    """Проверяет, показывать ли товар как "в наличии". Если админ явно
+    задал состояние вручную в админ-панели (STOCK_OVERRIDE) — используется
+    оно. Иначе считается автоматически: остался ли хоть один свободный
+    (ещё не выданный) ключ среди ACCESS_KEYS + EXTRA_ACCESS_KEYS."""
+    override = STOCK_OVERRIDE.get(product_id)
+    if override is not None:
+        return override
+    return any(key not in ISSUED_KEYS for key in all_access_keys())
 
 
 # ====== Забаненные пользователи (админ-панель) ======
@@ -883,6 +951,27 @@ async def grant_product_purchase(
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
     key = await issue_next_key(user_id, product_id, duration_code, payment_id=payment_id)
 
+    # Лог покупки — уходит только владельцу (ADMIN_ID = @meaninglessperson),
+    # не второму владельцу и не назначенным админам. Юзернейм берём свежим
+    # через get_chat, а не из старых данных, чтобы не показать неактуальный
+    # username, если пользователь его сменил.
+    try:
+        buyer_chat = await bot.get_chat(user_id)
+        buyer_label = f"@{buyer_chat.username}" if buyer_chat.username else f"id {user_id}"
+    except Exception:
+        buyer_label = f"id {user_id}"
+
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"🛒 Покупка\n"
+            f"Покупатель: {buyer_label}\n"
+            f"Тариф: {duration_label or duration_code}\n"
+            f"Оплачено: {amount_label}",
+        )
+    except Exception:
+        logging.exception("Не удалось отправить лог покупки владельцу")
+
     try:
         if key is not None:
             await bot.send_message(
@@ -1052,7 +1141,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown duration"}, status=404)
     if not duration.get("available", True):
         return web.json_response({"error": "duration unavailable"}, status=409)
-    if not has_available_key():
+    if not has_available_key(product_id):
         return web.json_response({"error": "out_of_stock"}, status=409)
 
     # ВАЖНО: цену считаем только на бэкенде, по своей таблице цен и
@@ -1134,7 +1223,7 @@ async def create_invoice_xrocket_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown duration"}, status=404)
     if not duration.get("available", True):
         return web.json_response({"error": "duration unavailable"}, status=409)
-    if not has_available_key():
+    if not has_available_key(product_id):
         return web.json_response({"error": "out_of_stock"}, status=409)
 
     final_price, promo = apply_promo_float(base_price, promo_code_raw)
@@ -1518,11 +1607,13 @@ async def validate_promo_handler(request: web.Request) -> web.Response:
 
 
 async def stock_status_handler(request: web.Request) -> web.Response:
-    """Отдаёт фронтенду, остались ли ещё свободные ключи доступа. Дёргается
-    при открытии экрана оформления (см. checkStockStatus в script.js), чтобы
-    показать "Нет в наличии", если все ключи из ACCESS_KEYS уже раскуплены —
-    ещё до попытки оплаты."""
-    return web.json_response({"available": has_available_key()})
+    """Отдаёт фронтенду, остались ли ещё свободные ключи доступа для
+    конкретного товара. Дёргается при открытии экрана оформления (см.
+    checkStockStatus в script.js), чтобы показать "Нет в наличии", если
+    все ключи уже раскуплены (или админ вручную выключил наличие) — ещё
+    до попытки оплаты."""
+    product_id = request.query.get("product_id", "dystopia")
+    return web.json_response({"available": has_available_key(product_id)})
 
 
 async def check_ban_handler(request: web.Request) -> web.Response:
@@ -1693,6 +1784,120 @@ async def admin_promo_list_handler(request: web.Request) -> web.Response:
     items = list(ADMIN_PROMOS.values())
     items.reverse()
     return web.json_response({"promos": items})
+
+
+async def admin_keys_add_handler(request: web.Request) -> web.Response:
+    """Добавляет один новый ключ доступа в EXTRA_ACCESS_KEYS (в рантайме,
+    без деплоя). Доступно любому назначенному админу/владельцу."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_key = str(body.get("key", "")).strip()
+    if not raw_key:
+        return web.json_response({"error": "empty key"}, status=400)
+
+    if raw_key in ACCESS_KEYS or raw_key in EXTRA_ACCESS_KEYS:
+        return web.json_response({"error": "key already exists"}, status=409)
+
+    EXTRA_ACCESS_KEYS.append(raw_key)
+    _save_extra_access_keys()
+
+    return web.json_response({"key": raw_key, "total": len(all_access_keys())})
+
+
+async def admin_keys_delete_handler(request: web.Request) -> web.Response:
+    """Удаляет ключ, добавленный через админ-панель (EXTRA_ACCESS_KEYS).
+    Ключи, зашитые в код (ACCESS_KEYS), а также уже выданные покупателям —
+    удалить нельзя."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    raw_key = str(body.get("key", "")).strip()
+
+    if raw_key in ACCESS_KEYS:
+        return web.json_response({"error": "cannot delete built-in key"}, status=403)
+    if raw_key not in EXTRA_ACCESS_KEYS:
+        return web.json_response({"error": "not found"}, status=404)
+    if raw_key in ISSUED_KEYS:
+        return web.json_response({"error": "key already issued"}, status=409)
+
+    EXTRA_ACCESS_KEYS.remove(raw_key)
+    _save_extra_access_keys()
+
+    return web.json_response({"deleted": raw_key, "total": len(all_access_keys())})
+
+
+async def admin_keys_list_handler(request: web.Request) -> web.Response:
+    """Отдаёт список всех ключей (и зашитых в код, и добавленных из
+    админ-панели) с пометкой, выдан ли уже каждый из них и можно ли его
+    удалить, плюс текущее состояние ручного переключателя "в наличии"."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    product_id = str(body.get("product_id", "dystopia"))
+
+    items = []
+    for key in all_access_keys():
+        issued = ISSUED_KEYS.get(key)
+        items.append({
+            "key": key,
+            "issued": issued is not None,
+            "issued_at": issued.get("issued_at") if issued else None,
+            "deletable": key in EXTRA_ACCESS_KEYS and issued is None,
+        })
+
+    return web.json_response({
+        "keys": items,
+        "available_count": sum(1 for item in items if not item["issued"]),
+        "stock_override": STOCK_OVERRIDE.get(product_id),
+    })
+
+
+async def admin_keys_set_stock_handler(request: web.Request) -> web.Response:
+    """Устанавливает (или снимает) ручной переключатель "в наличии" для
+    товара. available: true — принудительно "в наличии", false —
+    принудительно "нет в наличии", null/отсутствует — вернуться к
+    автоматическому подсчёту по реальному остатку ключей."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    product_id = str(body.get("product_id", "dystopia"))
+    raw_available = body.get("available")
+
+    if raw_available is None:
+        STOCK_OVERRIDE.pop(product_id, None)
+    elif isinstance(raw_available, bool):
+        STOCK_OVERRIDE[product_id] = raw_available
+    else:
+        return web.json_response({"error": "bad available"}, status=400)
+
+    _save_stock_override()
+
+    return web.json_response({
+        "product_id": product_id,
+        "stock_override": STOCK_OVERRIDE.get(product_id),
+        "effective_available": has_available_key(product_id),
+    })
 
 
 async def admin_user_promo_codes_handler(request: web.Request) -> web.Response:
@@ -1941,6 +2146,10 @@ def build_web_app() -> web.Application:
     app.router.add_post("/admin/promo/create", admin_promo_create_handler)
     app.router.add_post("/admin/promo/delete", admin_promo_delete_handler)
     app.router.add_post("/admin/promo/list", admin_promo_list_handler)
+    app.router.add_post("/admin/keys/add", admin_keys_add_handler)
+    app.router.add_post("/admin/keys/delete", admin_keys_delete_handler)
+    app.router.add_post("/admin/keys/list", admin_keys_list_handler)
+    app.router.add_post("/admin/keys/set_stock", admin_keys_set_stock_handler)
     app.router.add_post("/admin/user_promo_codes", admin_user_promo_codes_handler)
     app.router.add_post("/admin/user_promo_delete", admin_user_promo_delete_handler)
     app.router.add_post("/admin/whoami", admin_whoami_handler)
