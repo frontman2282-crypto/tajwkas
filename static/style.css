@@ -1499,6 +1499,108 @@ body.keyboard-open .tabbar {
   color: var(--text-faint);
 }
 
+/* --- Строка "Светлая тема" + переключатель --- */
+
+.profile-theme-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin-top: 10px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.profile-theme-row-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(210, 210, 218, 0.1);
+  color: var(--silver-2);
+}
+
+.profile-theme-row-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.profile-theme-row-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.theme-switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 46px;
+  height: 27px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f4f4f6, #cfcfd6);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.theme-switch[aria-checked="true"] {
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  border-color: transparent;
+}
+
+.theme-switch[aria-checked="true"] .theme-switch-knob {
+  transform: translateX(19px);
+}
+
+/* ============ СВЕТЛАЯ ТЕМА ============
+   Включается классом .theme-light на <body> (см. initThemeToggle() в
+   script.js). Переопределяем только базовые переменные фона/текста/рамок —
+   акцентные цвета (звезда, зелёный, редкости призов и т.п.) намеренно
+   оставляем как есть, чтобы бейджи и статусы не теряли смысл. */
+body.theme-light {
+  --bg-black: #f4f4f6;
+  --bg-graphite-deep: #ffffff;
+  --bg-graphite-mid: #eceef1;
+  --card-bg: #ffffff;
+  --card-bg-2: #f1f1f4;
+  --border: #e2e2e6;
+  --border-soft: #ececef;
+  --silver-1: #4b4b52;
+  --silver-2: #1c1c1f;
+  --silver-glow: #6c6c74;
+  --text-main: #16161a;
+  --text-dim: #5c5c66;
+  --text-faint: #93939c;
+}
+
+body.theme-light .bg-glow--top,
+body.theme-light .bg-glow--bottom,
+body.theme-light .bg-glow--mid {
+  opacity: 0.08;
+}
+
 /* ============ ЭКРАН "МОИ ПРОМОКОДЫ" ============ */
 
 .promo-list-actions {
