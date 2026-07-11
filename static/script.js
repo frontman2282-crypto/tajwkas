@@ -2117,15 +2117,22 @@ const adminUserPromoEmpty = document.getElementById("adminUserPromoEmpty");
 const adminKeyInput = document.getElementById("adminKeyInput");
 const adminKeyAddBtn = document.getElementById("adminKeyAddBtn");
 const adminKeyStatus = document.getElementById("adminKeyStatus");
+const adminKeyDurationToggle = document.getElementById("adminKeyDurationToggle");
 const adminKeysList = document.getElementById("adminKeysList");
 const adminKeysEmpty = document.getElementById("adminKeysEmpty");
 const adminStockAutoBtn = document.getElementById("adminStockAutoBtn");
 const adminStockYesBtn = document.getElementById("adminStockYesBtn");
 const adminStockNoBtn = document.getElementById("adminStockNoBtn");
 const adminStockStatus = document.getElementById("adminStockStatus");
+const adminKeysClearIssuedBtn = document.getElementById("adminKeysClearIssuedBtn");
+const adminKeysClearIssuedStatus = document.getElementById("adminKeysClearIssuedStatus");
 // Товар, которым управляет блок "Ключи доступа" в админке — единственный
 // товар в магазине, см. PRODUCTS в bot.py.
 const ADMIN_KEYS_PRODUCT_ID = "dystopia";
+// Срок, который будет присвоен следующему добавляемому ключу. Список
+// вариантов подтягивается с бэкенда (DURATIONS), поэтому если тарифы
+// поменяются — кнопки обновятся сами, без правки фронтенда.
+let adminKeyDurationCode = "7d";
 
 // Иконка "крестик" для кнопок удаления/разбана в списках
 const REMOVE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
@@ -2439,9 +2446,37 @@ function renderStockToggle(override) {
   adminStockNoBtn.classList.toggle("promo-apply-btn--applied", override === false);
 }
 
+// Строит кнопки выбора срока нового ключа по списку тарифов с бэкенда
+// (durations: [{code, label}, ...]) — если список тарифов поменяется на
+// сервере, кнопки подстроятся сами при следующей загрузке.
+function renderKeyDurationToggle(durations) {
+  const list = durations && durations.length ? durations : [{ code: "7d", label: "7 дней" }];
+
+  // Если текущий выбранный срок пропал из списка (например, тариф убрали) —
+  // переключаемся на первый доступный.
+  if (!list.some((d) => d.code === adminKeyDurationCode)) {
+    adminKeyDurationCode = list[0].code;
+  }
+
+  adminKeyDurationToggle.innerHTML = "";
+  list.forEach((d) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "promo-apply-btn";
+    btn.textContent = d.label || d.code;
+    btn.classList.toggle("promo-apply-btn--applied", d.code === adminKeyDurationCode);
+    btn.addEventListener("click", () => {
+      adminKeyDurationCode = d.code;
+      renderKeyDurationToggle(list);
+    });
+    adminKeyDurationToggle.appendChild(btn);
+  });
+}
+
 async function loadAdminKeys() {
   try {
     const data = await adminPost("/admin/keys/list", { product_id: ADMIN_KEYS_PRODUCT_ID });
+    renderKeyDurationToggle(data.durations || []);
     renderAdminKeys(data.keys || []);
     renderStockToggle(data.stock_override === undefined ? null : data.stock_override);
   } catch (err) {
@@ -2464,7 +2499,12 @@ function renderAdminKeys(items) {
     title.className = "admin-list-item-title";
     title.textContent = item.key;
 
+    const durationLine = document.createElement("div");
+    durationLine.className = "admin-list-item-sub";
+    durationLine.textContent = item.duration_label || item.duration_code || "";
+
     info.appendChild(title);
+    info.appendChild(durationLine);
 
     const badge = document.createElement("span");
     badge.className = "admin-list-item-badge";
@@ -2508,7 +2548,11 @@ adminKeyAddBtn.addEventListener("click", async () => {
 
   adminKeyAddBtn.disabled = true;
   try {
-    await adminPost("/admin/keys/add", { key });
+    await adminPost("/admin/keys/add", {
+      key,
+      duration_code: adminKeyDurationCode,
+      product_id: ADMIN_KEYS_PRODUCT_ID,
+    });
     adminKeyInput.value = "";
     setAdminStatus(adminKeyStatus, "Ключ добавлен", "success");
     tg?.HapticFeedback?.notificationOccurred("success");
@@ -2535,6 +2579,29 @@ async function setStockOverride(available) {
 adminStockAutoBtn.addEventListener("click", () => setStockOverride(null));
 adminStockYesBtn.addEventListener("click", () => setStockOverride(true));
 adminStockNoBtn.addEventListener("click", () => setStockOverride(false));
+
+// Чистит записи о выдаче ключей, которых больше нет в текущем списке
+// (например, старые ключи, удалённые из кода) — на статус наличия и на
+// уже активные ключи это не влияет, просто убирает "хвосты" из истории.
+adminKeysClearIssuedBtn.addEventListener("click", async () => {
+  adminKeysClearIssuedBtn.disabled = true;
+  try {
+    const data = await adminPost("/admin/keys/clear_issued", {});
+    const count = data.cleared_count || 0;
+    setAdminStatus(
+      adminKeysClearIssuedStatus,
+      count > 0 ? `Очищено записей: ${count}` : "Нечего чистить",
+      "success"
+    );
+    tg?.HapticFeedback?.notificationOccurred("success");
+    loadAdminKeys();
+  } catch (err) {
+    setAdminStatus(adminKeysClearIssuedStatus, "Не удалось очистить: " + err.message, "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    adminKeysClearIssuedBtn.disabled = false;
+  }
+});
 
 // --- Промокоды конкретного пользователя (поиск по username/id, любые) ---
 
