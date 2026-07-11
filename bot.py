@@ -314,10 +314,7 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 # выдаются строго по очереди (сначала "test", потом "test2" и т.д.), и
 # каждый ключ может быть выдан только ОДИН раз, любому из покупателей.
 # Как только ключ выдан — он больше никому не достанется повторно.
-ACCESS_KEYS: list[str] = [
-    "DYST-SBF36-100YG-11P44-GSXTJ",
-    "DYST-3GC7W-QXW5W-5KH5T-8M1GE",
-]
+ACCESS_KEYS: list[str] = ["test", "test2", "test3", "test4"]
 
 # Ссылка, которая отправляется покупателю вместе с ключом (в сообщении
 # "Файл тут: ..."). Поменяй на актуальную ссылку, если она изменится.
@@ -351,6 +348,35 @@ def _save_issued_keys() -> None:
 
 ISSUED_KEYS: dict[str, dict] = _load_issued_keys()
 
+# Хранилище уже обработанных оплат: telegram_payment_charge_id (для звёзд)
+# или invoice_id (для xRocket) -> выданный ключ (или None, если товар был
+# без ключа, например открытие кейса). Нужно, чтобы если Telegram/xRocket
+# пришлют уведомление об одной и той же оплате повторно (например, из-за
+# рестарта бота в неудачный момент), мы не выдавали второй ключ за одну и
+# ту же оплату — а просто вернули тот же ключ, что был выдан в первый раз.
+PROCESSED_PAYMENTS_PATH = os.environ.get(
+    "PROCESSED_PAYMENTS_PATH", "processed_payments.json"
+)
+
+
+def _load_processed_payments() -> dict[str, str | None]:
+    try:
+        with open(PROCESSED_PAYMENTS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_processed_payments() -> None:
+    try:
+        with open(PROCESSED_PAYMENTS_PATH, "w", encoding="utf-8") as f:
+            json.dump(PROCESSED_PAYMENTS, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", PROCESSED_PAYMENTS_PATH)
+
+
+PROCESSED_PAYMENTS: dict[str, str | None] = _load_processed_payments()
+
 # Лок нужен, чтобы при одновременном подтверждении двух оплат (например,
 # звёзды и xRocket почти одновременно) один и тот же ключ не выдался
 # дважды разным людям — без лока обе оплаты могли бы одновременно увидеть
@@ -358,11 +384,24 @@ ISSUED_KEYS: dict[str, dict] = _load_issued_keys()
 _KEY_ISSUE_LOCK = asyncio.Lock()
 
 
-async def issue_next_key(user_id: int | None, product_id: str, duration_code: str) -> str | None:
+async def issue_next_key(
+    user_id: int | None,
+    product_id: str,
+    duration_code: str,
+    payment_id: str | None = None,
+) -> str | None:
     """Атомарно выдаёт следующий свободный ключ из ACCESS_KEYS (строго по
     порядку) и помечает его выданным, чтобы он не достался никому ещё раз.
-    Возвращает None, если свободных ключей больше нет."""
+    Возвращает None, если свободных ключей больше нет.
+
+    Если передан payment_id и такая оплата уже была обработана раньше
+    (Telegram/xRocket повторно прислали уведомление об одной и той же
+    оплате) — просто возвращает тот же ключ, что был выдан в первый раз,
+    вместо того чтобы выдавать новый."""
     async with _KEY_ISSUE_LOCK:
+        if payment_id is not None and payment_id in PROCESSED_PAYMENTS:
+            return PROCESSED_PAYMENTS[payment_id]
+
         for key in ACCESS_KEYS:
             if key not in ISSUED_KEYS:
                 ISSUED_KEYS[key] = {
@@ -372,7 +411,14 @@ async def issue_next_key(user_id: int | None, product_id: str, duration_code: st
                     "issued_at": time.time(),
                 }
                 _save_issued_keys()
+                if payment_id is not None:
+                    PROCESSED_PAYMENTS[payment_id] = key
+                    _save_processed_payments()
                 return key
+
+        if payment_id is not None:
+            PROCESSED_PAYMENTS[payment_id] = None
+            _save_processed_payments()
     return None
 
 
@@ -805,6 +851,7 @@ async def grant_product_purchase(
     duration_code: str,
     promo_field: str,
     amount_label: str,
+    payment_id: str | None = None,
 ) -> None:
     """Списывает использование промокода (если был) и уведомляет
     пользователя о выдаче товара. Общая логика для оплаты звёздами
@@ -830,7 +877,7 @@ async def grant_product_purchase(
     # больше никогда никому не выдаётся повторно (issue_next_key
     # запоминает выданные ключи в ISSUED_KEYS).
     duration_text = f" на срок «{duration_label}»" if duration_label else ""
-    key = await issue_next_key(user_id, product_id, duration_code)
+    key = await issue_next_key(user_id, product_id, duration_code, payment_id=payment_id)
 
     try:
         if key is not None:
@@ -963,7 +1010,14 @@ async def successful_payment_handler(message: Message):
     # или "admin:SALE50"), либо пустой, если промокод не применялся или был
     # статическим. Списываем использование только теперь, когда оплата
     # реально прошла (а не просто была создана ссылка на инвойс).
-    await grant_product_purchase(message.from_user.id, product_id, duration_code, promo_field, amount_label)
+    await grant_product_purchase(
+        message.from_user.id,
+        product_id,
+        duration_code,
+        promo_field,
+        amount_label,
+        payment_id=payment.telegram_payment_charge_id,
+    )
 
 
 # ====== HTTP-эндпоинт для мини-аппа ======
@@ -1246,7 +1300,12 @@ async def xrocket_webhook_handler(request: web.Request) -> web.Response:
         await grant_case_reward(user_id, amount_label)
     else:
         await grant_product_purchase(
-            user_id, entry["product_id"], entry["duration_code"], entry["promo_field"], amount_label
+            user_id,
+            entry["product_id"],
+            entry["duration_code"],
+            entry["promo_field"],
+            amount_label,
+            payment_id=f"xrocket:{invoice_id}",
         )
 
     return web.json_response({"ok": True})
