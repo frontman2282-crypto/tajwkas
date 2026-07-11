@@ -14,7 +14,7 @@ const PRODUCTS = [
     logo: "assets/dystlogo.png",
     // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
     // пилюли поверх обложки assets/dystopia.png.
-    badges: ["UNDETECTED", "ROOT"],
+    badges: ["UNDETECTED"],
     // Платформы, на которых работает продукт — рисуются мелкими иконками
     // рядом с названием на карточке в магазине (см. PLATFORM_ICONS ниже).
     // Доступные значения: "mobile", "pc".
