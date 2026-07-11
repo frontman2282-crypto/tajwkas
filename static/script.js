@@ -28,7 +28,7 @@ const PRODUCTS = [
 // показывается в списке, но красным цветом и недоступен для выбора/покупки.
 const DURATIONS = [
   { code: "7d", label: "7 дней", price: 1 },
-  { code: "30d", label: "30 дней", price: 500, available: false },
+  { code: "30d", label: "30 дней", price: 500 },
   { code: "12m", label: "12 месяцев", price: 4000, available: false },
 ];
 
@@ -2441,9 +2441,9 @@ adminPromoCreateBtn.addEventListener("click", async () => {
 
 function renderStockToggle(override) {
   // override: true / false / null (null = автоматический подсчёт)
-  adminStockAutoBtn.classList.toggle("promo-apply-btn--applied", override === null || override === undefined);
-  adminStockYesBtn.classList.toggle("promo-apply-btn--applied", override === true);
-  adminStockNoBtn.classList.toggle("promo-apply-btn--applied", override === false);
+  adminStockAutoBtn.classList.toggle("admin-segmented-btn--active", override === null || override === undefined);
+  adminStockYesBtn.classList.toggle("admin-segmented-btn--active", override === true);
+  adminStockNoBtn.classList.toggle("admin-segmented-btn--active", override === false);
 }
 
 // Строит кнопки выбора срока нового ключа по списку тарифов с бэкенда
@@ -2462,9 +2462,9 @@ function renderKeyDurationToggle(durations) {
   list.forEach((d) => {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "promo-apply-btn";
+    btn.className = "admin-segmented-btn";
     btn.textContent = d.label || d.code;
-    btn.classList.toggle("promo-apply-btn--applied", d.code === adminKeyDurationCode);
+    btn.classList.toggle("admin-segmented-btn--active", d.code === adminKeyDurationCode);
     btn.addEventListener("click", () => {
       adminKeyDurationCode = d.code;
       renderKeyDurationToggle(list);
@@ -2584,13 +2584,18 @@ adminStockNoBtn.addEventListener("click", () => setStockOverride(false));
 // (например, старые ключи, удалённые из кода) — на статус наличия и на
 // уже активные ключи это не влияет, просто убирает "хвосты" из истории.
 adminKeysClearIssuedBtn.addEventListener("click", async () => {
+  const confirmed = await confirmAction(
+    "Очистить старые записи о выдаче? Это уберёт только записи об уже удалённых ключах — активные ключи и их статус \"выдан\" не тронет."
+  );
+  if (!confirmed) return;
+
   adminKeysClearIssuedBtn.disabled = true;
   try {
     const data = await adminPost("/admin/keys/clear_issued", {});
     const count = data.cleared_count || 0;
     setAdminStatus(
       adminKeysClearIssuedStatus,
-      count > 0 ? `Очищено записей: ${count}` : "Нечего чистить",
+      count > 0 ? `Очищено записей: ${count}` : "Нечего было чистить — всё чисто",
       "success"
     );
     tg?.HapticFeedback?.notificationOccurred("success");
