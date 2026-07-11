@@ -2483,7 +2483,14 @@ function renderKeyDurationToggle(durations) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "admin-segmented-btn";
-    btn.textContent = d.label || d.code;
+    // Если по этому сроку есть покупатели, которые оплатили, но ещё не
+    // получили ключ (закончились в момент оплаты), показываем это прямо
+    // на кнопке — чтобы было видно, что добавленный ключ сейчас же уйдёт
+    // одному из них, а не просто ляжет "в наличие".
+    const pendingCount = d.pending_count || 0;
+    btn.textContent = pendingCount > 0
+      ? `${d.label || d.code} (ждут: ${pendingCount})`
+      : (d.label || d.code);
     btn.classList.toggle("admin-segmented-btn--active", d.code === adminKeyDurationCode);
     btn.addEventListener("click", () => {
       adminKeyDurationCode = d.code;
@@ -2568,13 +2575,24 @@ adminKeyAddBtn.addEventListener("click", async () => {
 
   adminKeyAddBtn.disabled = true;
   try {
-    await adminPost("/admin/keys/add", {
+    const result = await adminPost("/admin/keys/add", {
       key,
       duration_code: adminKeyDurationCode,
       product_id: ADMIN_KEYS_PRODUCT_ID,
     });
     adminKeyInput.value = "";
-    setAdminStatus(adminKeyStatus, "Ключ добавлен", "success");
+    // Если по этому сроку кто-то ждал ключ (оплатил раньше, но ключей не
+    // хватило) — бэкенд сам, автоматически, только что выдал ему этот
+    // (или один из свободных) ключ. Явно показываем это в статусе, чтобы
+    // не казалось, что "ключ добавлен, но не выдаётся".
+    const autoCount = result?.auto_fulfilled_count || 0;
+    setAdminStatus(
+      adminKeyStatus,
+      autoCount > 0
+        ? `Ключ добавлен и сразу выдан ${autoCount} ожидавшему покупателю`
+        : "Ключ добавлен",
+      "success"
+    );
     tg?.HapticFeedback?.notificationOccurred("success");
     loadAdminKeys();
   } catch (err) {
