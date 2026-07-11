@@ -156,6 +156,19 @@
         <span class="profile-promo-btn-text">Мои промокоды</span>
         <span class="profile-promo-btn-chevron">›</span>
       </button>
+
+      <!-- Переключатель темы — переключает CSS-класс theme-light на body,
+           см. applyTheme()/initThemeToggle() в script.js. Выбор сохраняется
+           в localStorage и подгружается при следующем открытии. -->
+      <div class="profile-theme-row">
+        <span class="profile-theme-row-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4.3"/><path d="M12 2.6v2.4M12 19v2.4M21.4 12H19M5 12H2.6M18.4 5.6l-1.7 1.7M7.3 16.7l-1.7 1.7M18.4 18.4l-1.7-1.7M7.3 7.3 5.6 5.6"/></svg>
+        </span>
+        <span class="profile-theme-row-text">Светлая тема</span>
+        <button class="theme-switch" id="themeSwitchBtn" type="button" role="switch" aria-checked="false" aria-label="Светлая тема">
+          <span class="theme-switch-knob"></span>
+        </button>
+      </div>
     </section>
 
     <!-- ===== Экран: МОИ ПРОМОКОДЫ ===== -->
@@ -535,7 +548,7 @@
          который проверяет data-view === "support" отдельно от switchView). -->
     <button class="tab" data-view="support">
       <span class="tab-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M9.2 9.2a2.8 2.8 0 1 1 4.3 2.4c-.7.5-1.5 1-1.5 2.1"/><path d="M12 17.2h.01"/></svg>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13.5V12a8 8 0 0 1 16 0v1.5"/><rect x="3" y="13" width="4.2" height="6" rx="1.6"/><rect x="16.8" y="13" width="4.2" height="6" rx="1.6"/><path d="M18.7 19v.6a2.6 2.6 0 0 1-2.6 2.6h-2.6"/><path d="M12 22.2a1.1 1.1 0 1 1 0-2.2 1.1 1.1 0 0 1 0 2.2Z"/></svg>
       </span>
       <span class="tab-label">Поддержка</span>
     </button>
