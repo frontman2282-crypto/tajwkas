@@ -53,6 +53,16 @@
   --manual-btn-3: #050506;
 
   --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  /* Некоторые элементы (бейджи и цена поверх обложки товара, тёмные
+     градиентные кнопки типа "Купить"/"Написать") всегда сидят на
+     фиксированном тёмном фоне независимо от темы приложения — их фон не
+     завязан на --card-bg/--bg-black. Поэтому текст на них тоже должен
+     оставаться светлым всегда, а не идти следом за --text-main, который
+     в светлой теме становится тёмным (иначе текст/цена становятся не
+     видны на тёмной подложке). */
+  --text-on-dark: #f5f5f7;
+  --text-on-dark-dim: #b6b6bf;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
@@ -580,6 +590,62 @@ body.keyboard-open .tabbar {
   letter-spacing: -0.01em;
 }
 
+.topbar--shop {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.theme-suntoggle {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  margin-top: 2px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.theme-suntoggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.theme-suntoggle-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.theme-suntoggle-btn:active {
+  transform: scale(0.9);
+}
+
+.theme-suntoggle-btn--active {
+  color: #fff;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  box-shadow: 0 4px 12px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+/* Солнце, когда активно — тёплая жёлтая подсветка вместо графитовой,
+   чтобы визуально сразу читалось "светлая тема", а не просто "нажато". */
+#themeSunBtn.theme-suntoggle-btn--active {
+  color: #3a2b00;
+  background: linear-gradient(135deg, #ffe08a, #f5a623);
+  box-shadow: 0 4px 12px rgba(245, 166, 35, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -666,7 +732,7 @@ body.keyboard-open .tabbar {
   text-transform: uppercase;
   padding: 6px 10px;
   border-radius: 100px;
-  color: var(--text-main);
+  color: var(--text-on-dark);
   background: rgba(9, 9, 10, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.08);
   -webkit-backdrop-filter: blur(8px);
@@ -706,14 +772,14 @@ body.keyboard-open .tabbar {
 .card-hero-price-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--text-dim);
+  color: var(--text-on-dark-dim);
 }
 
 .card-hero-price-value {
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 800;
-  color: var(--text-main);
+  color: var(--text-on-dark);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
@@ -739,7 +805,7 @@ body.keyboard-open .tabbar {
 
 .card-hero-price-icon--badge {
   fill: currentColor;
-  color: var(--text-main);
+  color: var(--text-on-dark);
 }
 
 .card-hero-footer {
@@ -1326,7 +1392,7 @@ body.keyboard-open .tabbar {
   font-size: 15px;
   font-weight: 800;
   font-family: var(--font-body);
-  color: var(--text-main);
+  color: var(--text-on-dark);
   background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
   cursor: pointer;
@@ -1354,7 +1420,7 @@ body.keyboard-open .tabbar {
 }
 
 .buy-btn--manual {
-  color: var(--text-main);
+  color: var(--text-on-dark);
   background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
@@ -1497,81 +1563,6 @@ body.keyboard-open .tabbar {
   flex-shrink: 0;
   font-size: 20px;
   color: var(--text-faint);
-}
-
-/* --- Строка "Светлая тема" + переключатель --- */
-
-.profile-theme-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 15px 16px;
-  margin-top: 10px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
-}
-
-.profile-theme-row-icon {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(210, 210, 218, 0.1);
-  color: var(--silver-2);
-}
-
-.profile-theme-row-icon svg {
-  width: 19px;
-  height: 19px;
-}
-
-.profile-theme-row-text {
-  flex: 1;
-  text-align: left;
-  font-family: var(--font-display);
-  font-size: 14.5px;
-  font-weight: 700;
-  color: var(--text-main);
-}
-
-.theme-switch {
-  flex-shrink: 0;
-  position: relative;
-  width: 46px;
-  height: 27px;
-  border-radius: 100px;
-  border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.06);
-  cursor: pointer;
-  padding: 0;
-  transition: background 0.25s ease, border-color 0.25s ease;
-}
-
-.theme-switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 21px;
-  height: 21px;
-  border-radius: 50%;
-  background: linear-gradient(180deg, #f4f4f6, #cfcfd6);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.theme-switch[aria-checked="true"] {
-  background: linear-gradient(135deg, var(--green), var(--green-dark));
-  border-color: transparent;
-}
-
-.theme-switch[aria-checked="true"] .theme-switch-knob {
-  transform: translateX(19px);
 }
 
 /* ============ СВЕТЛАЯ ТЕМА ============
@@ -2509,7 +2500,7 @@ body.theme-light .bg-glow--mid {
 
 .nft-modal-btn--write {
   background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
-  color: var(--text-main);
+  color: var(--text-on-dark);
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
 }
