@@ -19,6 +19,10 @@ const PRODUCTS = [
     // рядом с названием на карточке в магазине (см. PLATFORM_ICONS ниже).
     // Доступные значения: "mobile", "pc".
     platforms: ["pc"],
+    // Показывает рядом со значком платформы зелёный бейдж "молния +
+    // автоматическая выдача" — для товаров, ключи на которые выдаются
+    // ботом сразу и без участия человека.
+    autoDelivery: true,
   },
 ];
 
@@ -71,6 +75,11 @@ const PLATFORM_ICONS = {
     svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`,
   },
 };
+
+// Значок молнии для бейджа "Автоматическая выдача" (см. autoDelivery в
+// PRODUCTS и renderProducts ниже) — заливка currentColor, цвет задаётся
+// в CSS через .card-hero-auto-badge.
+const AUTO_DELIVERY_ICON_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.9 2 4 13.5h6.2L10.4 22 20 9.8h-6.6Z"/></svg>`;
 
 // ====== Инициализация Telegram WebApp ======
 const tg = window.Telegram?.WebApp;
@@ -315,6 +324,14 @@ function renderProducts() {
         span.innerHTML = meta.svg;
         platformsEl.appendChild(span);
       });
+
+      if (product.autoDelivery) {
+        const auto = document.createElement("span");
+        auto.className = "card-hero-auto-badge";
+        auto.title = "Ключ выдаётся ботом сразу после оплаты";
+        auto.innerHTML = `${AUTO_DELIVERY_ICON_SVG}<span>Автоматическая выдача</span>`;
+        platformsEl.appendChild(auto);
+      }
     }
 
     const priceValueEl = node.querySelector(".card-hero-price-value");
