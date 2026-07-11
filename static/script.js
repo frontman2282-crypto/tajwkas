@@ -1506,6 +1506,46 @@ function loadAvatarImage(src, fallbackLetter) {
   testImg.src = src;
 }
 
+// ====== Тема оформления (тёмная/светлая) ======
+// По умолчанию — тёмная (как и было). Выбор пользователя сохраняется в
+// localStorage и применяется сразу при следующем открытии, ещё до
+// прорисовки экранов, чтобы не было "мигания" тёмной темой перед светлой.
+const THEME_STORAGE_KEY = "kichiro_theme";
+const themeSwitchBtn = document.getElementById("themeSwitchBtn");
+
+function applyTheme(isLight) {
+  document.body.classList.toggle("theme-light", isLight);
+  if (themeSwitchBtn) {
+    themeSwitchBtn.setAttribute("aria-checked", String(isLight));
+  }
+}
+
+function initThemeToggle() {
+  let saved = "dark";
+  try {
+    saved = localStorage.getItem(THEME_STORAGE_KEY) || "dark";
+  } catch (err) {
+    // localStorage может быть недоступен (приватный режим и т.п.) —
+    // просто остаёмся на тёмной теме по умолчанию.
+  }
+  applyTheme(saved === "light");
+
+  themeSwitchBtn?.addEventListener("click", () => {
+    const nowLight = document.body.classList.contains("theme-light");
+    const next = !nowLight;
+    applyTheme(next);
+    tg?.HapticFeedback?.impactOccurred("light");
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next ? "light" : "dark");
+    } catch (err) {
+      // Не страшно, если сохранить не удалось — тема просто не запомнится
+      // до следующего открытия.
+    }
+  });
+}
+
+initThemeToggle();
+
 // ====== Мои промокоды (профиль) ======
 const myPromosBtn = document.getElementById("myPromosBtn");
 const myPromosBack = document.getElementById("myPromosBack");
