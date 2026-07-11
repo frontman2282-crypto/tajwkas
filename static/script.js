@@ -1510,13 +1510,27 @@ function loadAvatarImage(src, fallbackLetter) {
 // По умолчанию — тёмная (как и было). Выбор пользователя сохраняется в
 // localStorage и применяется сразу при следующем открытии, ещё до
 // прорисовки экранов, чтобы не было "мигания" тёмной темой перед светлой.
+// Солнце (themeSunBtn) — светлая тема, луна (themeMoonBtn) — тёмная.
 const THEME_STORAGE_KEY = "kichiro_theme";
-const themeSwitchBtn = document.getElementById("themeSwitchBtn");
+const themeSunBtn = document.getElementById("themeSunBtn");
+const themeMoonBtn = document.getElementById("themeMoonBtn");
 
 function applyTheme(isLight) {
   document.body.classList.toggle("theme-light", isLight);
-  if (themeSwitchBtn) {
-    themeSwitchBtn.setAttribute("aria-checked", String(isLight));
+  themeSunBtn?.classList.toggle("theme-suntoggle-btn--active", isLight);
+  themeSunBtn?.setAttribute("aria-checked", String(isLight));
+  themeMoonBtn?.classList.toggle("theme-suntoggle-btn--active", !isLight);
+  themeMoonBtn?.setAttribute("aria-checked", String(!isLight));
+}
+
+function setTheme(isLight) {
+  applyTheme(isLight);
+  tg?.HapticFeedback?.impactOccurred("light");
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, isLight ? "light" : "dark");
+  } catch (err) {
+    // Не страшно, если сохранить не удалось — тема просто не запомнится
+    // до следующего открытия.
   }
 }
 
@@ -1530,18 +1544,8 @@ function initThemeToggle() {
   }
   applyTheme(saved === "light");
 
-  themeSwitchBtn?.addEventListener("click", () => {
-    const nowLight = document.body.classList.contains("theme-light");
-    const next = !nowLight;
-    applyTheme(next);
-    tg?.HapticFeedback?.impactOccurred("light");
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next ? "light" : "dark");
-    } catch (err) {
-      // Не страшно, если сохранить не удалось — тема просто не запомнится
-      // до следующего открытия.
-    }
-  });
+  themeSunBtn?.addEventListener("click", () => setTheme(true));
+  themeMoonBtn?.addEventListener("click", () => setTheme(false));
 }
 
 initThemeToggle();
