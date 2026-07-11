@@ -491,6 +491,46 @@ def _save_processed_payments() -> None:
 
 PROCESSED_PAYMENTS: dict[str, str | None] = _load_processed_payments()
 
+# Очередь оплат, которые прошли (деньги списаны), но на момент оплаты
+# свободного ключа под нужный duration_code не нашлось. Раньше такие
+# покупки просто "терялись" — покупателю писали "выдадим вручную", но
+# никакого автоматического повторного показа ключа не было: даже если
+# админ потом добавлял новый ключ через панель, он просто лежал свободным,
+# а покупателю никто ничего не отправлял, пока админ не находил его
+# сообщение и не выдавал ключ руками. Из-за этого возникало ощущение
+# "добавил ключ в панели, а он не выдаётся".
+#
+# Теперь такие покупки сохраняются сюда, и при добавлении нового ключа
+# нужного срока (см. admin_keys_add_handler) бот сам, автоматически,
+# найдёт самую старую зависшую покупку этого срока и отправит ключ
+# покупателю — без участия админа.
+#
+# Ключ словаря — payment_id (тот же, что и в PROCESSED_PAYMENTS). Запись:
+# {"user_id": int, "product_id": str, "duration_code": str,
+#  "amount_label": str, "created_at": float}.
+PENDING_KEY_PURCHASES_PATH = os.environ.get(
+    "PENDING_KEY_PURCHASES_PATH", "pending_key_purchases.json"
+)
+
+
+def _load_pending_key_purchases() -> dict[str, dict]:
+    try:
+        with open(PENDING_KEY_PURCHASES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_pending_key_purchases() -> None:
+    try:
+        with open(PENDING_KEY_PURCHASES_PATH, "w", encoding="utf-8") as f:
+            json.dump(PENDING_KEY_PURCHASES, f, ensure_ascii=False, indent=2)
+    except OSError:
+        logging.exception("Не удалось сохранить %s", PENDING_KEY_PURCHASES_PATH)
+
+
+PENDING_KEY_PURCHASES: dict[str, dict] = _load_pending_key_purchases()
+
 # Лок нужен, чтобы при одновременном подтверждении двух оплат (например,
 # звёзды и xRocket почти одновременно) один и тот же ключ не выдался
 # дважды разным людям — без лока обе оплаты могли бы одновременно увидеть
@@ -514,7 +554,15 @@ async def issue_next_key(
     вместо того чтобы выдавать новый."""
     async with _KEY_ISSUE_LOCK:
         if payment_id is not None and payment_id in PROCESSED_PAYMENTS:
-            return PROCESSED_PAYMENTS[payment_id]
+            cached = PROCESSED_PAYMENTS[payment_id]
+            # Если в прошлый раз ключ реально выдали — просто возвращаем
+            # его же (не выдаём второй ключ за одну и ту же оплату). Но
+            # если в прошлый раз ключей не было (cached is None) — не
+            # останавливаемся тут, а пробуем ещё раз: вдруг с тех пор
+            # админ добавил новый ключ этого срока (см. вызов из
+            # fulfill_pending_key_purchases ниже).
+            if cached is not None:
+                return cached
 
         # Ключи выдаются только из очереди, привязанной к оплаченному
         # сроку (duration_code) — покупатель тарифа "30 дней" не должен
@@ -537,6 +585,79 @@ async def issue_next_key(
             PROCESSED_PAYMENTS[payment_id] = None
             _save_processed_payments()
     return None
+
+
+async def fulfill_pending_key_purchases(duration_code: str) -> list[dict]:
+    """Пытается автоматически закрыть зависшие покупки (см.
+    PENDING_KEY_PURCHASES) нужного срока — по одной, от самой старой к
+    самой новой, пока не кончатся либо свободные ключи, либо сами зависшие
+    покупки. Вызывается сразу после того, как в EXTRA_ACCESS_KEYS добавлен
+    новый ключ (см. admin_keys_add_handler).
+
+    Возвращает список выполненных выдач (для ответа админ-панели), каждая —
+    {"payment_id", "user_id", "key"}."""
+    fulfilled: list[dict] = []
+
+    # Сортируем по времени покупки, чтобы тот, кто ждёт дольше всех,
+    # получил ключ первым.
+    pending_items = sorted(
+        (
+            (payment_id, info)
+            for payment_id, info in PENDING_KEY_PURCHASES.items()
+            if info.get("duration_code") == duration_code
+        ),
+        key=lambda item: item[1].get("created_at", 0),
+    )
+
+    for payment_id, info in pending_items:
+        key = await issue_next_key(
+            info.get("user_id"),
+            info.get("product_id", "dystopia"),
+            duration_code,
+            payment_id=payment_id,
+        )
+        if key is None:
+            # Свободные ключи этого срока закончились — дальше по очереди
+            # тоже ничего не получится, останавливаемся.
+            break
+
+        PENDING_KEY_PURCHASES.pop(payment_id, None)
+        _save_pending_key_purchases()
+        fulfilled.append({
+            "payment_id": payment_id,
+            "user_id": info.get("user_id"),
+            "key": key,
+        })
+
+        duration_label = DURATIONS.get(duration_code, {}).get("label", duration_code)
+        duration_text = f" на срок «{duration_label}»" if duration_label else ""
+        try:
+            await bot.send_message(
+                info.get("user_id"),
+                f"Ваш ключ готов!\n"
+                f"Товар «{info.get('product_id', 'dystopia')}»{duration_text} — "
+                f"свободный ключ появился, выдаём автоматически.\n\n"
+                f"Файл тут: {DELIVERY_FILE_LINK}\n"
+                f"Ваш ключ: <code>{key}</code>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logging.exception(
+                "Не удалось отправить автоматически выданный ключ пользователю %s",
+                info.get("user_id"),
+            )
+
+        try:
+            await bot.send_message(
+                ADMIN_ID,
+                f"✅ Зависшая покупка закрыта автоматически: покупателю "
+                f"{info.get('user_id')} ({info.get('amount_label', '')}) выдан "
+                f"ключ{duration_text}.",
+            )
+        except Exception:
+            logging.exception("Не удалось уведомить админа об автоматической довыдаче ключа")
+
+    return fulfilled
 
 
 def has_available_key(product_id: str = "dystopia", duration_code: str | None = None) -> bool:
@@ -1032,25 +1153,40 @@ async def grant_product_purchase(
                 parse_mode="HTML",
             )
         else:
-            # Ключи закончились — сообщаем и покупателю, и админу, чтобы
-            # ключ выдали вручную и пополнили ACCESS_KEYS.
+            # Ключи закончились — сообщаем и покупателю, и админу. Саму
+            # покупку кладём в PENDING_KEY_PURCHASES: как только админ
+            # добавит новый ключ этого срока в панели, бот сам найдёт эту
+            # запись и пришлёт ключ покупателю автоматически — писать в
+            # поддержку и ждать ручной выдачи не обязательно.
             await bot.send_message(
                 user_id,
                 f"Оплата получена: {amount_label}\n"
                 f"Товар «{product_id}»{duration_text} оплачен, но свободные ключи "
-                f"закончились. Мы выдадим ключ вручную в ближайшее время, "
-                f"напишите, пожалуйста, в поддержку.",
+                f"закончились. Как только ключ появится в наличии, мы вышлем его "
+                f"вам автоматически — ничего дополнительно делать не нужно.",
             )
     except Exception:
         logging.exception("Не удалось отправить сообщение о выдаче товара пользователю %s", user_id)
 
     if key is None:
+        if payment_id is not None:
+            PENDING_KEY_PURCHASES[payment_id] = {
+                "user_id": user_id,
+                "product_id": product_id,
+                "duration_code": duration_code,
+                "amount_label": amount_label,
+                "created_at": time.time(),
+            }
+            _save_pending_key_purchases()
+
         try:
             await bot.send_message(
                 ADMIN_ID,
                 f"⚠️ Закончились ключи доступа! Покупатель {user_id} оплатил "
                 f"«{product_id}»{duration_text} ({amount_label}), но свободного "
-                f"ключа из ACCESS_KEYS не нашлось. Выдай ключ вручную и пополни список.",
+                f"ключа из ACCESS_KEYS не нашлось. Покупка поставлена в очередь "
+                f"и будет выдана автоматически, как только ты добавишь новый "
+                f"ключ этого срока в админ-панели — либо выдай ключ вручную.",
             )
         except Exception:
             logging.exception("Не удалось уведомить админа о закончившихся ключах")
@@ -1884,12 +2020,21 @@ async def admin_keys_add_handler(request: web.Request) -> web.Response:
         STOCK_OVERRIDE.pop(product_id, None)
         _save_stock_override()
 
+    # Если этого срока ждали покупатели, чья оплата прошла раньше, но
+    # ключей не хватило (см. PENDING_KEY_PURCHASES) — сразу же, автоматом,
+    # выдаём им ключи из только что добавленных (и любых ранее свободных).
+    # Именно это раньше не работало: ключ добавлялся, но так и оставался
+    # свободным, пока админ не находил зависшего покупателя вручную.
+    fulfilled = await fulfill_pending_key_purchases(duration_code)
+
     return web.json_response({
         "key": raw_key,
         "duration_code": duration_code,
         "total": len(all_access_keys()),
         "stock_override": STOCK_OVERRIDE.get(product_id),
         "effective_available": has_available_key(product_id, duration_code),
+        "auto_fulfilled": fulfilled,
+        "auto_fulfilled_count": len(fulfilled),
     })
 
 
@@ -1980,12 +2125,26 @@ async def admin_keys_list_handler(request: web.Request) -> web.Response:
             "deletable": key in _extra_key_strings() and issued is None,
         })
 
+    pending_by_duration: dict[str, int] = {}
+    for info in PENDING_KEY_PURCHASES.values():
+        code = info.get("duration_code", "7d")
+        pending_by_duration[code] = pending_by_duration.get(code, 0) + 1
+
     return web.json_response({
         "keys": items,
         "available_count": sum(1 for item in items if not item["issued"]),
         "stock_override": STOCK_OVERRIDE.get(product_id),
         "durations": [
-            {"code": code, "label": info["label"]} for code, info in DURATIONS.items()
+            {
+                "code": code,
+                "label": info["label"],
+                # Сколько покупателей этого срока оплатили, но всё ещё
+                # ждут ключ (см. PENDING_KEY_PURCHASES) — покажет админу,
+                # что новый добавленный ключ уйдёт не "в наличие", а сразу
+                # кому-то из этой очереди.
+                "pending_count": pending_by_duration.get(code, 0),
+            }
+            for code, info in DURATIONS.items()
         ],
     })
 
