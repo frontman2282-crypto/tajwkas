@@ -317,7 +317,6 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 ACCESS_KEYS: list[str] = [
     "DYST-SBF36-100YG-11P44-GSXTJ",
     "DYST-3GC7W-QXW5W-5KH5T-8M1GE",
-    "DYST-E9196-8JTHN-R66P5-6Z5B0",
 ]
 
 # Ссылка, которая отправляется покупателю вместе с ключом (в сообщении
