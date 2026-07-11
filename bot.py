@@ -176,7 +176,7 @@ PRODUCTS = {
 # даже если кто-то попробует обратиться к API напрямую, минуя интерфейс.
 DURATIONS = {
     "7d": {"label": "7 дней", "price": 1, "available": True},
-    "30d": {"label": "30 дней", "price": 500, "available": True},
+    "30d": {"label": "30 дней", "price": 1, "available": True},
     "12m": {"label": "12 месяцев", "price": 4000, "available": True},
 }
 
