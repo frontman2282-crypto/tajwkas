@@ -410,6 +410,20 @@ function applyDurationPrice(priceEl, duration) {
     priceEl.textContent = "Нет в наличии";
     return;
   }
+
+  // Реальный остаток ключей на складе (ACCESS_KEYS) касается только
+  // автоматических способов оплаты (Stars и xRocket) — они выдают ключ
+  // сразу и без участия человека. NFT, RU-карта и гривна оформляются
+  // вручную владельцем/администратором в переписке, поэтому для них цена
+  // показывается как обычно, даже если ключи закончились.
+  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
+  if (isAutoMethod && !checkoutStockAvailable) {
+    priceEl.classList.remove("duration-option-price--note");
+    priceEl.classList.remove("duration-option-price--discounted");
+    priceEl.classList.add("duration-option-price--unavailable");
+    priceEl.textContent = "Нет в наличии";
+    return;
+  }
   priceEl.classList.remove("duration-option-price--unavailable");
 
   if (checkoutPaymentMethod === "nft") {
@@ -825,6 +839,22 @@ function setPaymentMethod(method) {
   }
 
   refreshAllPrices();
+
+  // Остаток ключей (ACCESS_KEYS) касается только Stars/xRocket — при
+  // переключении на них показываем "нет в наличии", если ключи кончились;
+  // при переключении на ручные способы (NFT/RU-карта/гривна) — не мешаем,
+  // они не зависят от склада.
+  const isAutoMethod = method === "stars" || method === "xrocket";
+  checkoutBuyBtn.disabled = isAutoMethod && !checkoutStockAvailable;
+  if (isAutoMethod && !checkoutStockAvailable) {
+    setCardStatus(
+      checkoutStatus,
+      "Ключи закончились для Stars и xRocket — доступны NFT, RU-карта и гривна (оформляются вручную)",
+      "error"
+    );
+  } else {
+    setCardStatus(checkoutStatus, "");
+  }
 }
 
 // Обновляет текст кнопки ручной оплаты (NFT / RU карта). Для RU карты —
@@ -880,7 +910,6 @@ paymentOptions.addEventListener("click", (e) => {
   if (!btn) return;
 
   setPaymentMethod(btn.dataset.method);
-  setCardStatus(checkoutStatus, "");
   setPaymentOptionsOpen(false);
   tg?.HapticFeedback?.selectionChanged();
 });
@@ -1050,28 +1079,22 @@ async function checkStockStatus(productId) {
 // Перекрашивает все ещё "доступные по конфигу" тарифы в "Нет в наличии",
 // когда реальный склад ключей (ACCESS_KEYS в bot.py) опустел, и блокирует
 // кнопки покупки — прямо на экране оформления, до попытки оплаты.
+// Показывает "нет в наличии" и блокирует покупку только для автоматических
+// способов оплаты (Stars, xRocket) — они выдают ключ сразу из ACCESS_KEYS.
+// NFT, RU-карта и гривна оформляются вручную владельцем/администратором и
+// не зависят от остатка ключей на складе, поэтому их не трогаем.
 function applyStockUnavailableUI() {
-  checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
-    const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
-    // Тарифы, уже помеченные available:false в конфиге, и так показывают
-    // "Нет в наличии" — трогать их незачем.
-    if (!duration || duration.available === false) return;
-
-    btn.classList.add("duration-option--disabled");
-    btn.disabled = true;
-    btn.setAttribute("aria-disabled", "true");
-
-    const priceEl = btn.querySelector(".duration-option-price");
-    if (priceEl) {
-      priceEl.classList.remove("duration-option-price--note", "duration-option-price--discounted");
-      priceEl.classList.add("duration-option-price--unavailable");
-      priceEl.textContent = "Нет в наличии";
-    }
-  });
-
+  refreshDurationPrices();
   checkoutBuyBtn.disabled = true;
-  checkoutManualBtn.disabled = true;
-  setCardStatus(checkoutStatus, "Все ключи раскуплены — товар временно нет в наличии", "error");
+
+  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
+  if (isAutoMethod) {
+    setCardStatus(
+      checkoutStatus,
+      "Ключи закончились для Stars и xRocket — доступны NFT, RU-карта и гривна (оформляются вручную)",
+      "error"
+    );
+  }
 }
 
 function openCheckout(product, prefillPromoCode) {
