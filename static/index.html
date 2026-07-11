@@ -252,6 +252,30 @@
         <div class="admin-list" id="adminUserPromoList"></div>
         <p class="admin-list-empty" id="adminUserPromoEmpty" hidden>У этого пользователя нет промокодов.</p>
       </div>
+
+      <!-- Ключи доступа: добавление новых + ручной переключатель "в наличии" -->
+      <div class="admin-block">
+        <span class="option-group-label">Ключи доступа</span>
+        <div class="promo-row">
+          <div class="promo-input-wrap">
+            <svg class="promo-input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 7a4 4 0 1 0-3.874 5H4v4h2v-4h2v4h2v-2h1.126A4 4 0 0 0 15 7Z"/></svg>
+            <input type="text" id="adminKeyInput" class="promo-input" placeholder="Новый ключ" autocomplete="off" autocapitalize="off" spellcheck="false">
+          </div>
+          <button class="promo-apply-btn" id="adminKeyAddBtn" type="button">Добавить</button>
+        </div>
+        <p class="promo-status" id="adminKeyStatus"></p>
+
+        <span class="option-group-label" id="adminStockLabel">В наличии</span>
+        <div class="admin-form-row" id="adminStockToggle">
+          <button class="promo-apply-btn" id="adminStockAutoBtn" type="button">Авто</button>
+          <button class="promo-apply-btn" id="adminStockYesBtn" type="button">Да</button>
+          <button class="promo-apply-btn" id="adminStockNoBtn" type="button">Нет</button>
+        </div>
+        <p class="promo-status" id="adminStockStatus"></p>
+
+        <div class="admin-list" id="adminKeysList"></div>
+        <p class="admin-list-empty" id="adminKeysEmpty" hidden>Ключей пока нет.</p>
+      </div>
     </section>
 
     <!-- ===== Экран: ОФОРМЛЕНИЕ ПОКУПКИ ===== -->
