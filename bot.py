@@ -317,6 +317,11 @@ XROCKET_INVOICES: dict[str, dict] = _load_xrocket_invoices()
 # очереди (сначала из ACCESS_KEYS, потом из EXTRA_ACCESS_KEYS), и каждый
 # ключ может быть выдан только ОДИН раз, любому из покупателей. Как только
 # ключ выдан — он больше никому не достанется повторно.
+#
+# Ключи из этого списка (ACCESS_KEYS) считаются ключами на срок "7d" —
+# единственный тариф, который был в наличии на момент, когда они были
+# зашиты в код. Если нужен ключ на другой срок — добавляй его через
+# админ-панель с выбором нужного срока (см. EXTRA_ACCESS_KEYS ниже).
 ACCESS_KEYS: list[str] = [
     # Первые 3 ключа (DYST-SBF36-..., DYST-3GC7W-..., DYST-E9196-...) были
     # выданы покупателям и удалены из списка по просьбе владельца — новые
@@ -327,18 +332,39 @@ ACCESS_KEYS: list[str] = [
 # деплоя). Хранятся отдельно от ACCESS_KEYS и переживают рестарты — только
 # если каталог, где лежит EXTRA_ACCESS_KEYS_PATH, смонтирован как
 # persistent volume (см. инструкцию для Railway).
+#
+# Формат: список словарей {"key": str, "duration_code": str}, где
+# duration_code — один из ключей DURATIONS ("7d"/"30d"/"12m" и т.п.),
+# срок, на который действует именно этот ключ. Так при оплате конкретного
+# тарифа покупателю выдаётся ключ именно под этот тариф, а не первый
+# попавшийся в общей очереди.
 EXTRA_ACCESS_KEYS_PATH = os.environ.get(
     "EXTRA_ACCESS_KEYS_PATH", "extra_access_keys.json"
 )
 
 
-def _load_extra_access_keys() -> list[str]:
+def _load_extra_access_keys() -> list[dict]:
     try:
         with open(EXTRA_ACCESS_KEYS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data if isinstance(data, list) else []
     except (FileNotFoundError, json.JSONDecodeError):
         return []
+
+    if not isinstance(data, list):
+        return []
+
+    # Обратная совместимость: старый формат файла — просто список строк
+    # (когда срок ключей не выбирался и все они считались "7d").
+    result = []
+    for item in data:
+        if isinstance(item, str):
+            result.append({"key": item, "duration_code": "7d"})
+        elif isinstance(item, dict) and item.get("key"):
+            result.append({
+                "key": item["key"],
+                "duration_code": item.get("duration_code") or "7d",
+            })
+    return result
 
 
 def _save_extra_access_keys() -> None:
@@ -349,14 +375,32 @@ def _save_extra_access_keys() -> None:
         logging.exception("Не удалось сохранить %s", EXTRA_ACCESS_KEYS_PATH)
 
 
-EXTRA_ACCESS_KEYS: list[str] = _load_extra_access_keys()
+EXTRA_ACCESS_KEYS: list[dict] = _load_extra_access_keys()
 
 
-def all_access_keys() -> list[str]:
+def _extra_key_strings() -> list[str]:
+    return [item["key"] for item in EXTRA_ACCESS_KEYS]
+
+
+def key_duration_code(key: str) -> str:
+    """Возвращает код срока (7d/30d/12m/...), к которому привязан ключ.
+    Ключи, зашитые в ACCESS_KEYS (без явного срока), считаются ключами на
+    7 дней (см. комментарий у ACCESS_KEYS)."""
+    for item in EXTRA_ACCESS_KEYS:
+        if item["key"] == key:
+            return item.get("duration_code", "7d")
+    return "7d"
+
+
+def all_access_keys(duration_code: str | None = None) -> list[str]:
     """Полный список ключей на выдачу: сначала зашитые в код (ACCESS_KEYS),
     потом добавленные через админ-панель (EXTRA_ACCESS_KEYS), в порядке
-    добавления."""
-    return ACCESS_KEYS + EXTRA_ACCESS_KEYS
+    добавления. Если передан duration_code — возвращает только ключи,
+    привязанные к этому сроку."""
+    keys = ACCESS_KEYS + _extra_key_strings()
+    if duration_code is None:
+        return keys
+    return [key for key in keys if key_duration_code(key) == duration_code]
 
 
 # Ручной переключатель "в наличии / нет в наличии" из админ-панели. Если
@@ -472,7 +516,10 @@ async def issue_next_key(
         if payment_id is not None and payment_id in PROCESSED_PAYMENTS:
             return PROCESSED_PAYMENTS[payment_id]
 
-        for key in all_access_keys():
+        # Ключи выдаются только из очереди, привязанной к оплаченному
+        # сроку (duration_code) — покупатель тарифа "30 дней" не должен
+        # получить ключ, помеченный как "7 дней", даже если он свободен.
+        for key in all_access_keys(duration_code):
             if key not in ISSUED_KEYS:
                 ISSUED_KEYS[key] = {
                     "user_id": user_id,
@@ -492,15 +539,17 @@ async def issue_next_key(
     return None
 
 
-def has_available_key(product_id: str = "dystopia") -> bool:
-    """Проверяет, показывать ли товар как "в наличии". Если админ явно
-    задал состояние вручную в админ-панели (STOCK_OVERRIDE) — используется
-    оно. Иначе считается автоматически: остался ли хоть один свободный
-    (ещё не выданный) ключ среди ACCESS_KEYS + EXTRA_ACCESS_KEYS."""
+def has_available_key(product_id: str = "dystopia", duration_code: str | None = None) -> bool:
+    """Проверяет, показывать ли товар (или конкретный тариф) как "в
+    наличии". Если админ явно задал состояние вручную в админ-панели
+    (STOCK_OVERRIDE) — используется оно (оно общее для товара, не зависит
+    от срока). Иначе считается автоматически: остался ли хоть один
+    свободный (ещё не выданный) ключ — среди всех ключей, либо, если
+    передан duration_code, среди ключей именно этого срока."""
     override = STOCK_OVERRIDE.get(product_id)
     if override is not None:
         return override
-    return any(key not in ISSUED_KEYS for key in all_access_keys())
+    return any(key not in ISSUED_KEYS for key in all_access_keys(duration_code))
 
 
 # ====== Забаненные пользователи (админ-панель) ======
@@ -1141,7 +1190,7 @@ async def create_invoice_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown duration"}, status=404)
     if not duration.get("available", True):
         return web.json_response({"error": "duration unavailable"}, status=409)
-    if not has_available_key(product_id):
+    if not has_available_key(product_id, duration_code):
         return web.json_response({"error": "out_of_stock"}, status=409)
 
     # ВАЖНО: цену считаем только на бэкенде, по своей таблице цен и
@@ -1223,7 +1272,7 @@ async def create_invoice_xrocket_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "unknown duration"}, status=404)
     if not duration.get("available", True):
         return web.json_response({"error": "duration unavailable"}, status=409)
-    if not has_available_key(product_id):
+    if not has_available_key(product_id, duration_code):
         return web.json_response({"error": "out_of_stock"}, status=409)
 
     final_price, promo = apply_promo_float(base_price, promo_code_raw)
@@ -1788,7 +1837,9 @@ async def admin_promo_list_handler(request: web.Request) -> web.Response:
 
 async def admin_keys_add_handler(request: web.Request) -> web.Response:
     """Добавляет один новый ключ доступа в EXTRA_ACCESS_KEYS (в рантайме,
-    без деплоя). Доступно любому назначенному админу/владельцу."""
+    без деплоя), привязанный к выбранному сроку (duration_code — один из
+    DURATIONS, по умолчанию "7d"). Доступно любому назначенному
+    админу/владельцу."""
     try:
         body = await request.json()
     except Exception:
@@ -1801,10 +1852,14 @@ async def admin_keys_add_handler(request: web.Request) -> web.Response:
     if not raw_key:
         return web.json_response({"error": "empty key"}, status=400)
 
-    if raw_key in ACCESS_KEYS or raw_key in EXTRA_ACCESS_KEYS:
+    duration_code = str(body.get("duration_code", "7d")).strip() or "7d"
+    if duration_code not in DURATIONS:
+        return web.json_response({"error": "unknown duration"}, status=400)
+
+    if raw_key in ACCESS_KEYS or raw_key in _extra_key_strings():
         return web.json_response({"error": "key already exists"}, status=409)
 
-    EXTRA_ACCESS_KEYS.append(raw_key)
+    EXTRA_ACCESS_KEYS.append({"key": raw_key, "duration_code": duration_code})
     _save_extra_access_keys()
 
     # Если раньше товар был вручную переключён в "нет в наличии" (например,
@@ -1820,10 +1875,40 @@ async def admin_keys_add_handler(request: web.Request) -> web.Response:
 
     return web.json_response({
         "key": raw_key,
+        "duration_code": duration_code,
         "total": len(all_access_keys()),
         "stock_override": STOCK_OVERRIDE.get(product_id),
-        "effective_available": has_available_key(product_id),
+        "effective_available": has_available_key(product_id, duration_code),
     })
+
+
+async def admin_keys_clear_issued_handler(request: web.Request) -> web.Response:
+    """Чистит "мусорные" записи в ISSUED_KEYS — то есть записи о выдаче
+    ключей, которых уже нет ни в ACCESS_KEYS, ни в EXTRA_ACCESS_KEYS
+    (например, старые ключи, удалённые из кода вручную, как в этот раз).
+
+    НЕ трогает записи о ключах, которые всё ещё числятся в текущем списке
+    (ACCESS_KEYS/EXTRA_ACCESS_KEYS) — такие ключи остаются выданными и не
+    освобождаются, чтобы их нельзя было случайно выдать повторно другому
+    покупателю. Это просто уборка "хвостов" от уже удалённых ключей, если
+    они мешаются/накапливаются в хранилище."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not is_admin_init_data(body.get("init_data")):
+        return web.json_response({"error": "forbidden"}, status=403)
+
+    active_keys = set(all_access_keys())
+    stale_keys = [key for key in ISSUED_KEYS if key not in active_keys]
+
+    for key in stale_keys:
+        del ISSUED_KEYS[key]
+    if stale_keys:
+        _save_issued_keys()
+
+    return web.json_response({"cleared": stale_keys, "cleared_count": len(stale_keys)})
 
 
 async def admin_keys_delete_handler(request: web.Request) -> web.Response:
@@ -1842,12 +1927,12 @@ async def admin_keys_delete_handler(request: web.Request) -> web.Response:
 
     if raw_key in ACCESS_KEYS:
         return web.json_response({"error": "cannot delete built-in key"}, status=403)
-    if raw_key not in EXTRA_ACCESS_KEYS:
+    if raw_key not in _extra_key_strings():
         return web.json_response({"error": "not found"}, status=404)
     if raw_key in ISSUED_KEYS:
         return web.json_response({"error": "key already issued"}, status=409)
 
-    EXTRA_ACCESS_KEYS.remove(raw_key)
+    EXTRA_ACCESS_KEYS[:] = [item for item in EXTRA_ACCESS_KEYS if item["key"] != raw_key]
     _save_extra_access_keys()
 
     return web.json_response({"deleted": raw_key, "total": len(all_access_keys())})
@@ -1855,8 +1940,11 @@ async def admin_keys_delete_handler(request: web.Request) -> web.Response:
 
 async def admin_keys_list_handler(request: web.Request) -> web.Response:
     """Отдаёт список всех ключей (и зашитых в код, и добавленных из
-    админ-панели) с пометкой, выдан ли уже каждый из них и можно ли его
-    удалить, плюс текущее состояние ручного переключателя "в наличии"."""
+    админ-панели) с пометкой, выдан ли уже каждый из них, на какой срок
+    ключ выдан (duration_code/duration_label) и можно ли его удалить,
+    плюс текущее состояние ручного переключателя "в наличии". Если в теле
+    запроса передан filter_duration_code — возвращает только ключи этого
+    срока."""
     try:
         body = await request.json()
     except Exception:
@@ -1866,21 +1954,28 @@ async def admin_keys_list_handler(request: web.Request) -> web.Response:
         return web.json_response({"error": "forbidden"}, status=403)
 
     product_id = str(body.get("product_id", "dystopia"))
+    filter_duration_code = body.get("filter_duration_code") or None
 
     items = []
-    for key in all_access_keys():
+    for key in all_access_keys(filter_duration_code):
         issued = ISSUED_KEYS.get(key)
+        duration_code = key_duration_code(key)
         items.append({
             "key": key,
+            "duration_code": duration_code,
+            "duration_label": DURATIONS.get(duration_code, {}).get("label", duration_code),
             "issued": issued is not None,
             "issued_at": issued.get("issued_at") if issued else None,
-            "deletable": key in EXTRA_ACCESS_KEYS and issued is None,
+            "deletable": key in _extra_key_strings() and issued is None,
         })
 
     return web.json_response({
         "keys": items,
         "available_count": sum(1 for item in items if not item["issued"]),
         "stock_override": STOCK_OVERRIDE.get(product_id),
+        "durations": [
+            {"code": code, "label": info["label"]} for code, info in DURATIONS.items()
+        ],
     })
 
 
@@ -2164,6 +2259,7 @@ def build_web_app() -> web.Application:
     app.router.add_post("/admin/promo/list", admin_promo_list_handler)
     app.router.add_post("/admin/keys/add", admin_keys_add_handler)
     app.router.add_post("/admin/keys/delete", admin_keys_delete_handler)
+    app.router.add_post("/admin/keys/clear_issued", admin_keys_clear_issued_handler)
     app.router.add_post("/admin/keys/list", admin_keys_list_handler)
     app.router.add_post("/admin/keys/set_stock", admin_keys_set_stock_handler)
     app.router.add_post("/admin/user_promo_codes", admin_user_promo_codes_handler)
