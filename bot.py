@@ -1657,12 +1657,23 @@ async def validate_promo_handler(request: web.Request) -> web.Response:
 
 async def stock_status_handler(request: web.Request) -> web.Response:
     """Отдаёт фронтенду, остались ли ещё свободные ключи доступа для
-    конкретного товара. Дёргается при открытии экрана оформления (см.
-    checkStockStatus в script.js), чтобы показать "Нет в наличии", если
-    все ключи уже раскуплены (или админ вручную выключил наличие) — ещё
-    до попытки оплаты."""
+    конкретного товара — и отдельно по каждому сроку (duration_code), а не
+    только общий флаг. Раньше отдавался один флаг "available" на весь
+    товар, из-за чего наличие ключа на один срок (например, 30 дней)
+    ошибочно "снимало" отметку "нет в наличии" и с других сроков (12
+    месяцев), для которых ключей на самом деле не было. Дёргается при
+    открытии экрана оформления (см. fetchStockStatus в script.js), чтобы
+    показать "Нет в наличии" на нужных тарифах, ещё до попытки оплаты."""
     product_id = request.query.get("product_id", "dystopia")
-    return web.json_response({"available": has_available_key(product_id)})
+    durations = {
+        code: has_available_key(product_id, code) for code in DURATIONS
+    }
+    return web.json_response({
+        # Общий флаг оставлен для обратной совместимости (старый фронтенд,
+        # если где-то ещё используется) — считается по всем ключам сразу.
+        "available": has_available_key(product_id),
+        "durations": durations,
+    })
 
 
 async def check_ban_handler(request: web.Request) -> web.Response:
