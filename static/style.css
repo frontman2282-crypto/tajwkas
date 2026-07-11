@@ -612,6 +612,12 @@ body.keyboard-open .tabbar {
 .card--hero {
   padding: 0;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+}
+
+.card--hero:active {
+  transform: scale(0.98);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .card-hero-btn {
@@ -776,6 +782,55 @@ body.keyboard-open .tabbar {
 .card-hero-platform svg {
   width: 12px;
   height: 12px;
+}
+
+/* Бейдж "Автоматическая выдача" — зелёная молния + подпись, стоит сразу
+   после иконок платформ в .card-hero-platforms. Лёгкая дышащая подсветка
+   подчёркивает, что выдача мгновенная, "живая", а не просто статичная
+   метка. */
+.card-hero-auto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px 0 6px;
+  border-radius: 100px;
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: #eafff2;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+  animation: auto-badge-pulse 2.6s ease-in-out infinite;
+}
+
+.card-hero-auto-badge svg {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.55));
+  animation: auto-badge-bolt 2.6s ease-in-out infinite;
+}
+
+@keyframes auto-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(34, 197, 94, 0); }
+}
+
+@keyframes auto-badge-bolt {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  45% { opacity: 0.75; transform: scale(0.92); }
+  55% { opacity: 1; transform: scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hero-auto-badge,
+  .card-hero-auto-badge svg {
+    animation: none;
+  }
 }
 
 .card-hero-title {
