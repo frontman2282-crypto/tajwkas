@@ -1,2810 +1,2967 @@
-// ====== Каталог товаров ======
-// Чтобы добавить новый товар — просто добавь объект в этот массив.
-// id должен совпадать с ключом PRODUCTS в bot.py.
-const PRODUCTS = [
-  {
-    id: "dystopia",
-    title: "Dystopia",
-    subtitle: "",
-    description: "",
-    price: 2,
-    initial: "D",
-    // Квадратный логотип товара — используется в шапке экрана оформления
-    // вместо буквы-заглушки.
-    logo: "assets/dystlogo.png",
-    // Бейджи на карточке магазина (см. renderProducts) — короткие статусные
-    // пилюли поверх обложки assets/dystopia.png.
-    badges: ["UNDETECTED"],
-    // Платформы, на которых работает продукт — рисуются мелкими иконками
-    // рядом с названием на карточке в магазине (см. PLATFORM_ICONS ниже).
-    // Доступные значения: "mobile", "pc".
-    platforms: ["pc"],
-    // Показывает рядом со значком платформы зелёный бейдж "молния +
-    // автоматическая выдача" — для товаров, ключи на которые выдаются
-    // ботом сразу и без участия человека.
-    autoDelivery: true,
-  },
-];
-
-// Сроки доступа — должны совпадать с DURATIONS в bot.py.
-// Цены указаны в звёздах (Telegram Stars) — поменяй значения price
-// на свои под каждый тариф. available: false — тариф "нет в наличии":
-// показывается в списке, но красным цветом и недоступен для выбора/покупки.
-const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 300 },
-  { code: "30d", label: "30 дней", price: 500 },
-  { code: "12m", label: "12 месяцев", price: 4000 },
-];
-
-// Цены в рублях при оплате способом "RU карта" — оформляется вручную
-// через личные сообщения с владельцем, поэтому цены задаются отдельно
-// от цен в Telegram Stars.
-const RU_CARD_PRICES = { "7d": 450, "30d": 750, "12m": 6000 };
-
-// Цены в гривнах при оплате способом "UAH (Гривна)" — оформляется точно
-// так же вручную, перепиской с владельцем в личных сообщениях.
-const UAH_CARD_PRICES = { "7d": 270, "30d": 470, "12m": 2300 };
-
-// Цены в USDT при оплате способом "xRocket" (крипта, оплата автоматическая
-// — как и Stars, без переписки с владельцем). Должны совпадать с
-// XROCKET_PRICES в bot.py. Реальная валюта инвойса на стороне xRocket
-// остаётся USDT (см. XROCKET_CURRENCY в bot.py) — здесь меняется только
-// то, что видит пользователь в интерфейсе (символ доллара вместо "USDT").
-const XROCKET_PRICES = { "7d": 6, "30d": 10, "12m": 80 };
-const XROCKET_CURRENCY = "$";
-
-// Промокод проверяется и считается всегда на сервере (в bot.py) — это
-// касается и статических кодов, и одноразовых кодов из кейса, клиенту в
-// этом вопросе не доверяем.
-
-// Иконка звезды (Telegram Stars) — используется вместо символа "★",
-// который выглядит по-разному в разных шрифтах/системах
-const STAR_ICON_SVG = `<svg class="icon-star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>`;
-
-// Иконки платформ (см. PRODUCTS[].platforms) — показываются мелким рядом
-// под названием товара на карточке в магазине, обозначая, на чём доступен
-// продукт. Стиль соответствует остальным line-иконкам интерфейса
-// (stroke=currentColor, stroke-width 1.8, скруглённые концы/стыки).
-const PLATFORM_ICONS = {
-  mobile: {
-    label: "Телефон",
-    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6.5" y="2" width="11" height="20" rx="2"/><path d="M10.5 5.2h3"/><path d="M11 18.6h2"/></svg>`,
-  },
-  pc: {
-    label: "Компьютер",
-    svg: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>`,
-  },
-};
-
-// Значок молнии для бейджа "Автоматическая выдача" (см. autoDelivery в
-// PRODUCTS и renderProducts ниже) — заливка currentColor, цвет задаётся
-// в CSS через .card-hero-auto-badge.
-const AUTO_DELIVERY_ICON_SVG = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12.9 2 4 13.5h6.2L10.4 22 20 9.8h-6.6Z"/></svg>`;
-
-// ====== Инициализация Telegram WebApp ======
-const tg = window.Telegram?.WebApp;
-
-if (tg) {
-  tg.ready();
-  tg.expand();
-  tg.setHeaderColor("#050208");
-  tg.setBackgroundColor("#050208");
-  // Запрещаем системный жест "потянуть вниз, чтобы закрыть" — без этого
-  // на iOS можно было утащить весь Mini App вниз и увидеть пустоту под
-  // интерфейсом. Метод есть только в Bot API 7.7+, поэтому оборачиваем
-  // в try/catch на случай старых клиентов Telegram.
-  try {
-    tg.disableVerticalSwipes?.();
-  } catch (err) {
-    // старая версия клиента — просто игнорируем
+:root {
+  --bg-black: #050506;
+  --bg-graphite-deep: #131315;
+  --bg-graphite-mid: #0c0c0e;
+  --card-bg: #131315;
+  --card-bg-2: #09090a;
+  --border: #242428;
+  --border-soft: #1a1a1d;
+  --silver-1: #b6b6bf;
+  --silver-2: #f1f1f4;
+  --silver-glow: #8d8d95;
+  --text-main: #f5f5f7;
+  --text-dim: #a6a6ae;
+  --text-faint: #6c6c74;
+  --star: #ffc21e;
+  --green: #22c55e;
+  --green-dark: #16a34a;
+  --red: #ef4444;
+  --red-dark: #b91c1c;
+  --accent: #7c6cf0;
+  --accent-soft: rgba(124, 108, 240, 0.12);
+  --accent-glow: rgba(124, 108, 240, 0.45);
+
+  /* Палитра редкости призов/промокодов — используется бейджами скидок
+     (кейс, результат кейса, "Мои промокоды") везде одинаково. */
+  --rarity-common-1: #aab4c4;
+  --rarity-common-2: #667080;
+  --rarity-common-glow: rgba(148, 163, 184, 0.4);
+  --rarity-uncommon-1: #5eead4;
+  --rarity-uncommon-2: #0d9488;
+  --rarity-uncommon-glow: rgba(45, 212, 191, 0.45);
+  --rarity-rare-1: #67e8ff;
+  --rarity-rare-2: #3b82f6;
+  --rarity-rare-glow: rgba(59, 178, 255, 0.5);
+  --rarity-epic-1: #f472e0;
+  --rarity-epic-2: #9333ea;
+  --rarity-epic-glow: rgba(217, 90, 240, 0.5);
+  --rarity-legendary-1: #ffe08a;
+  --rarity-legendary-2: #ff8a3d;
+  --rarity-legendary-glow: rgba(255, 154, 62, 0.55);
+
+  /* Тёмный графитово-чёрный градиент с приглушённым свечением — для
+     основных кнопок действия (ОК, "Открыть кейс", "Использовать", "Применить"). */
+  --graphite-btn-1: #3c3c44;
+  --graphite-btn-2: #1e1e23;
+  --graphite-btn-3: #08080a;
+  --graphite-btn-glow: rgba(0, 0, 0, 0.65);
+
+  /* Почти чёрные кнопки — для способов оплаты, которые оформляются через
+     личные сообщения (NFT, RU карта), и для основной кнопки покупки. */
+  --manual-btn-1: #26262c;
+  --manual-btn-2: #131316;
+  --manual-btn-3: #050506;
+
+  --font-display: "Golos Text", -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@keyframes legendary-glow-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.18); }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* touch-action: manipulation на всех кликабельных элементах — без этого
+   мобильный браузер/WebView после каждого тапа ждёт ~300мс, не был ли это
+   первый тап двойного тапа для зума, и только потом отправляет click.
+   Именно это ощущается как "нажатия срабатывают не с первого раза":
+   палец фактически попадает в элемент, но событие click приходит с
+   задержкой или "съедается", если за эти ~300мс происходит следующее
+   касание (а при быстром взаимодействии с интерфейсом это обычное дело).
+   Указываем это широким списком интерактивных селекторов, а не на *,
+   чтобы не трогать touch-action скролл-контейнеров (.app и т.п.). */
+button,
+a,
+[role="button"],
+input,
+select,
+textarea,
+.card-hero-btn,
+.tab,
+.duration-option,
+.payment-toggle,
+.payment-option,
+.promo-list-item,
+.admin-list-item {
+  touch-action: manipulation;
+}
+
+html {
+  height: 100%;
+  background: var(--bg-black);
+  overflow: hidden;
+}
+
+/* Тело фиксируем и полностью прячем его собственный скролл — иначе в
+   Telegram WebView (особенно на iOS) страницу можно "оттянуть" пальцем
+   ниже реального контента и увидеть пустую область под интерфейсом.
+   Прокручиваться теперь может только .app — это и есть единственный
+   скролл-контейнер приложения. */
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg-black);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
+/* Таббар прячем, пока открыта клавиатура (см. setAppHeight в script.js) —
+   на экране ввода промокода он не нужен, а освобождённое место не даёт
+   контенту "наезжать" на клавиатуру. */
+body.keyboard-open .tabbar {
+  display: none;
+}
+
+/* ============ ЭКРАН "ВЫ ЗАБАНЕНЫ" ============ */
+
+.banned-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 32px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(239, 68, 68, 0.14), transparent 60%),
+    linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 100%);
+}
+
+.banned-screen[hidden] {
+  display: none;
+}
+
+.banned-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.12);
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.35), 0 0 30px rgba(239, 68, 68, 0.25);
+}
+
+.banned-icon svg {
+  width: 34px;
+  height: 34px;
+}
+
+.banned-title {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.banned-text {
+  font-size: 14px;
+  color: var(--text-dim);
+  max-width: 280px;
+}
+
+/* ============ SPLASH ============ */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 40%, rgba(255, 255, 255, 0.16), transparent 60%),
+    linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 100%);
+  transition: opacity 0.5s cubic-bezier(0.22, 1, 0.36, 1), visibility 0.5s ease, transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.splash.splash--hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.04);
+  pointer-events: none;
+}
+
+/* Внутри сплэша крутятся 5 бесконечных (infinite) CSS-анимаций
+   (пульс, аура, спиннер, шиммер текста, точки). visibility: hidden
+   НЕ останавливает CSS-анимации — они продолжали бы бесконечно
+   выполняться в фоне на протяжении всей сессии в приложении (пересчёт
+   transform/filter каждый кадр), даже когда сплэш никто не видит, и
+   без всякой пользы грузили поток на слабых устройствах. Ставим
+   анимации на паузу сразу, как только сплэш скрыт. */
+.splash.splash--hidden,
+.splash.splash--hidden * {
+  animation-play-state: paused !important;
+}
+
+.splash-mark {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: splash-pulse 1.8s ease-in-out infinite;
+}
+
+/* Мягкое дышащее свечение позади кружка */
+.splash-aura {
+  position: absolute;
+  inset: -38px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(226, 226, 233, 0.35) 0%, rgba(150, 150, 158, 0.16) 45%, transparent 72%);
+  filter: blur(12px);
+  animation: splash-aura-pulse 2.2s ease-in-out infinite;
+}
+
+/* Тонкое статичное кольцо-рамка вокруг значка, чтобы бренд-марка не
+   выглядела плоским пятном на тёмном фоне */
+.splash-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+/* Сама бренд-марка: тёмный графитовый градиент вместо плоского белого
+   кружка, с иконкой лавки внутри — перекликается с иконкой вкладки
+   "Магазин" в нижней навигации */
+.splash-circle {
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 30%, var(--bg-graphite-deep) 0%, var(--bg-graphite-mid) 55%, var(--bg-black) 100%);
+  box-shadow:
+    0 0 18px rgba(210, 210, 220, 0.18),
+    0 0 32px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.06),
+    inset 0 -6px 14px rgba(0, 0, 0, 0.45);
+}
+
+.splash-glyph {
+  width: 34px;
+  height: 34px;
+  filter: drop-shadow(0 0 6px rgba(230, 230, 236, 0.35));
+}
+
+/* Вращающийся ободок-спиннер поверх кружка — создаёт ощущение "грузится" */
+.splash-spinner {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0deg, transparent 210deg, var(--silver-2) 300deg, var(--silver-1) 340deg, transparent 360deg);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 4px), #000 calc(100% - 4px));
+  filter: drop-shadow(0 0 8px rgba(230, 230, 236, 0.55));
+  animation: spin 1.1s linear infinite;
+}
+
+/* Маленькая искра, облетающая марку по кругу — добавляет живости рядом
+   со статичным щитом и толстым спиннером */
+.splash-orbit {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  animation: spin 2.4s linear infinite;
+}
+
+.splash-orbit-dot {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  border-radius: 50%;
+  background: var(--silver-2);
+  box-shadow: 0 0 8px 2px rgba(241, 241, 244, 0.7);
+}
+
+.splash-label {
+  margin-top: 28px;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(90deg, var(--silver-2), var(--text-dim), var(--silver-2));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: splash-label-in 0.6s ease 0.2s both, splash-label-shimmer 2.6s linear infinite;
+}
+
+.splash-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.splash-dots i {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--silver-2);
+  font-style: normal;
+  animation: splash-dot-blink 1.2s ease-in-out infinite;
+}
+
+.splash-dots i:nth-child(2) { animation-delay: 0.15s; }
+.splash-dots i:nth-child(3) { animation-delay: 0.3s; }
+
+/* Тонкая полоска "неопределённого" прогресса под текстом — усиливает
+   ощущение, что приложение реально что-то грузит, а не просто крутит
+   спиннер вхолостую */
+.splash-progress {
+  margin-top: 16px;
+  width: 120px;
+  height: 3px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.splash-progress-bar {
+  width: 40%;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--silver-2), transparent);
+  animation: splash-progress-slide 1.4s ease-in-out infinite;
+}
+
+@keyframes splash-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(280%); }
+}
+
+@keyframes splash-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+@keyframes splash-aura-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(0.94); }
+  50% { opacity: 1; transform: scale(1.08); }
+}
+
+@keyframes splash-label-shimmer {
+  to { background-position: -200% center; }
+}
+
+@keyframes splash-label-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes splash-dot-blink {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+/* ============ APP SHELL ============ */
+
+.app {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  /* На iOS 100dvh не всегда пересчитывается, когда открывается
+     клавиатура — из-за этого нижняя часть экрана (кнопка "Купить",
+     таббар) обрезалась и наезжала на промокод. --app-height
+     проставляется через JS по window.visualViewport и имеет приоритет. */
+  height: var(--app-height, 100dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* pan-y защищает от случайного горизонтального пинч-зума/скролла на
+     сенсорных устройствах, оставляя вертикальную прокрутку рабочей. */
+  touch-action: pan-y;
+  padding-bottom: 92px;
+  opacity: 0;
+  transform: translateY(10px);
+  background: linear-gradient(180deg, var(--bg-graphite-mid) 0%, var(--bg-black) 55%, var(--bg-black) 100%);
+}
+
+/* Тонкая сетка на фоне — читается как элемент "дистопичного" интерфейса,
+   а не как пустой чёрный экран. Сама сетка "прибита" к вьюпорту через
+   background-attachment: fixed, поэтому не едет вместе со скроллом. */
+.app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  -webkit-mask-image: radial-gradient(circle at 50% 0%, rgba(0,0,0,0.9) 0%, transparent 72%);
+  mask-image: radial-gradient(circle at 50% 0%, rgba(0,0,0,0.9) 0%, transparent 72%);
+  opacity: 0.6;
+}
+
+/* Лёгкое зерно поверх всего, чтобы плоский градиент не выглядел "пусто" */
+.app::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+}
+
+.app.app--ready {
+  animation: app-fade-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes app-fade-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.bg-glow {
+  position: absolute;
+  width: 420px;
+  height: 420px;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(20px);
+  z-index: 0;
+  /* Эти три пятна анимируются бесконечно всё время, пока открыто
+     приложение. will-change заранее переносит их в отдельный
+     compositor-слой, чтобы transform/opacity на каждом кадре
+     обсчитывался GPU, а не тянул за собой перерасчёт layout/paint
+     всей остальной страницы — на слабых Android-WebView в Telegram
+     это была одна из основных причин общего "подлагивания". */
+  will-change: transform, opacity;
+}
+
+.bg-glow--top {
+  top: -160px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, var(--silver-glow) 0%, transparent 70%);
+  opacity: 0.3;
+  animation: glow-breathe-top 7s ease-in-out infinite;
+}
+
+.bg-glow--bottom {
+  bottom: -200px;
+  left: 20%;
+  background: radial-gradient(circle, #3d3d43 0%, transparent 70%);
+  opacity: 0.25;
+  animation: glow-breathe-alt 8s ease-in-out infinite;
+  animation-delay: 2.4s;
+}
+
+/* Третье, более узкое пятно света — добавляет глубины в среднюю часть
+   экрана (там, где раньше было просто ровное чёрное поле). */
+.bg-glow--mid {
+  top: 38%;
+  right: -140px;
+  width: 320px;
+  height: 320px;
+  background: radial-gradient(circle, rgba(124, 108, 240, 0.22) 0%, transparent 70%);
+  opacity: 0.22;
+  animation: glow-breathe-alt 9s ease-in-out infinite;
+  animation-delay: 1.1s;
+}
+
+@keyframes glow-breathe-top {
+  0%, 100% { opacity: 0.28; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.45; transform: translateX(-50%) scale(1.08); }
+}
+
+@keyframes glow-breathe-alt {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.1); }
+}
+
+/* ============ VIEWS / TABS ============ */
+
+.view {
+  position: relative;
+  z-index: 1;
+  display: none;
+  padding: 28px 20px 12px;
+  /* opacity: 1 по умолчанию — экран ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не перезапустится. Раньше
+     видимость целиком зависела от автоматического запуска CSS-анимации
+     при смене display: none -> block. Это отлично работало при ПЕРВОМ
+     показе экрана (после загрузки страницы), но при повторном заходе на
+     тот же экран (например, второй раз открыть "Мои промокоды" или
+     "Оформление заказа") Telegram WebView не всегда перезапускал ту же
+     самую именованную CSS-анимацию повторно — из-за этого при втором
+     открытии контент секунду-две как будто "не появлялся". Теперь это
+     невозможно в принципе: базовое состояние — видимый экран, а анимация
+     — только бонус поверх него. */
+  opacity: 1;
+}
+
+.view--active {
+  display: block;
+}
+
+/* Анимация появления навешивается временным классом .view-anim-in из
+   switchView() в script.js при КАЖДОМ переключении экрана — класс явно
+   снимается, форсируется reflow и добавляется заново, что гарантированно
+   перезапускает анимацию в Telegram WebView. Просто переключения
+   display: none -> block для этого недостаточно (см. опыт с co-anim-in
+   в checkout ниже — та же проблема, тот же приём для её решения). */
+.view--active.view-anim-in {
+  animation: view-in 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+.view--checkout.view--active.view-anim-in {
+  animation: view-in-push 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity;
+}
+
+@keyframes view-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes view-in-push {
+  from { opacity: 0; transform: translateX(28px) scale(0.97); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+
+.topbar {
+  margin-bottom: 22px;
+  animation: topbar-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes topbar-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.topbar-eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--silver-2);
+  margin-bottom: 4px;
+}
+
+.topbar-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============ PRODUCT GRID / CARD ============ */
+
+.product-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  position: relative;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  overflow: hidden;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+  animation: card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--card-index, 0) * 70ms + 80ms);
+}
+
+.card:active {
+  transform: scale(0.985);
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* --- Hero card: фоновая обложка (assets/dystopia.png) + бейджи + цена --- */
+
+.card--hero {
+  padding: 0;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 50px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.22s ease;
+}
+
+.card--hero:active {
+  transform: scale(0.98);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5), 0 0 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.card-hero-btn {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+}
+
+.card-hero-media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background-image:
+    linear-gradient(180deg, rgba(5, 5, 6, 0.05) 0%, rgba(5, 5, 6, 0.25) 55%, rgba(5, 5, 6, 0.9) 100%),
+    url("assets/dystopia.png");
+  background-size: cover;
+  background-position: center;
+}
+
+.card-hero-badges {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.card-hero-badge {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 100px;
+  color: var(--text-main);
+  background: rgba(9, 9, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+
+.card-hero-badge--accent {
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+}
+
+.card-hero-badge--danger {
+  color: #fff;
+  background: linear-gradient(135deg, var(--red), var(--red-dark));
+  border-color: transparent;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35);
+}
+
+.card-hero-price {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 7px 12px;
+  border-radius: 100px;
+  background: rgba(9, 9, 10, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.card-hero-price-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.card-hero-price-value {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text-main);
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: opacity 0.26s ease, transform 0.26s ease;
+}
+
+.card-hero-price-value.is-fading {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.card-hero-price-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.card-hero-price-icon--star {
+  fill: var(--star);
+  filter: drop-shadow(0 0 4px rgba(255, 196, 30, 0.55));
+}
+
+.card-hero-price-icon--badge {
+  fill: currentColor;
+  color: var(--text-main);
+}
+
+.card-hero-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+}
+
+.card-hero-subtitle:empty {
+  display: none;
+}
+
+.card-hero-info {
+  min-width: 0;
+}
+
+.card-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-hero-platforms {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-hero-platform {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-soft);
+}
+
+.card-hero-platform svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Бейдж "Автоматическая выдача" — зелёная молния + подпись, стоит сразу
+   после иконок платформ в .card-hero-platforms. Лёгкая дышащая подсветка
+   подчёркивает, что выдача мгновенная, "живая", а не просто статичная
+   метка. */
+.card-hero-auto-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 17px;
+  padding: 0 7px 0 5px;
+  border-radius: 100px;
+  font-family: var(--font-display);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  color: #d9ffe6;
+  background: linear-gradient(135deg, #15803d, #0f5c2c);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.55);
+  animation: auto-badge-pulse 2.6s ease-in-out infinite;
+}
+
+.card-hero-auto-badge svg {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.45));
+  animation: auto-badge-bolt 2.6s ease-in-out infinite;
+}
+
+@keyframes auto-badge-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(21, 128, 61, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(21, 128, 61, 0); }
+}
+
+@keyframes auto-badge-bolt {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  45% { opacity: 0.75; transform: scale(0.92); }
+  55% { opacity: 1; transform: scale(1.08); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hero-auto-badge,
+  .card-hero-auto-badge svg {
+    animation: none;
+  }
+}
+
+.card-hero-title {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.card-hero-subtitle {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-hero-chevron {
+  flex-shrink: 0;
+  font-size: 22px;
+  color: var(--text-faint);
+  line-height: 1;
+}
+
+.icon-star {
+  width: 13px;
+  height: 13px;
+  fill: var(--star);
+  flex-shrink: 0;
+  vertical-align: -2px;
+  filter: drop-shadow(0 0 4px rgba(255, 196, 30, 0.55));
+}
+
+.price-value {
+  font-size: 16px;
+  font-weight: 800;
+  font-family: var(--font-display);
+}
+
+/* .badge-tag используется на экране оформления заказа (checkoutBadges) —
+   сохраняем отдельно от бейджей на карточке магазина (.card-hero-badge). */
+.badge-tag {
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  box-shadow: 0 4px 14px rgba(34, 197, 94, 0.35);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.option-group {
+  margin-top: 20px;
+}
+
+.option-group-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 10px;
+}
+
+.duration-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.duration-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duration-option:active {
+  transform: scale(0.985);
+}
+
+.duration-option-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+
+.duration-option-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.duration-option-price {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.duration-option-price--note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-align: right;
+  max-width: 128px;
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.duration-option-price--discounted {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.duration-option-price-old {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.75;
+  text-decoration: line-through;
+}
+
+.duration-option-price-new {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: inherit;
+}
+
+.duration-option--selected .duration-option-price--note {
+  color: var(--text-main);
+}
+
+.duration-option-radio {
+  position: relative;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.duration-option--selected {
+  border-color: var(--silver-1);
+  background: rgba(182, 182, 191, 0.09);
+  color: var(--text-main);
+  box-shadow: 0 0 0 1px var(--silver-1) inset, 0 0 22px rgba(141, 141, 149, 0.4);
+}
+
+.duration-option--selected .duration-option-price {
+  color: var(--silver-2);
+}
+
+.duration-option--selected .duration-option-radio {
+  border-color: var(--silver-2);
+  box-shadow: 0 0 12px rgba(141, 141, 149, 0.65);
+}
+
+.duration-option--selected .duration-option-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--silver-2);
+}
+
+/* Тариф недоступен ("нет в наличии") — нельзя выбрать, цена красным */
+.duration-option--disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.duration-option--disabled:active {
+  transform: none;
+}
+
+.duration-option-price--unavailable {
+  color: #ff4d4f;
+}
+
+.duration-option--disabled .duration-option-radio {
+  opacity: 0.4;
+}
+
+.promo-row {
+  display: flex;
+  gap: 8px;
+}
+
+.promo-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.promo-input-icon {
+  position: absolute;
+  left: 13px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+  pointer-events: none;
+  transition: color 0.15s ease;
+}
+
+.promo-input-wrap:focus-within .promo-input-icon {
+  color: var(--silver-2);
+}
+
+.promo-input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px 12px 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  /* iOS открывает своё нативное увеличение и подменяет фон поля на
+     белый, если размер шрифта меньше 16px — держим 16px, чтобы этого
+     не происходило. */
+  font-size: 16px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  /* Убираем нативный вид поля (WebKit подставляет свой светлый фон
+     инпута при фокусе/автозаполнении, из-за чего поле "белеет" —
+     именно это и происходило на скриншоте). */
+  -webkit-appearance: none;
+  appearance: none;
+  -webkit-text-fill-color: var(--text-main);
+  caret-color: var(--silver-2);
+}
+
+.promo-input::placeholder {
+  color: var(--text-faint);
+}
+
+.promo-input:focus {
+  border-color: var(--silver-1);
+  background: var(--card-bg-2);
+}
+
+/* WebKit применяет отдельный набор стилей для автозаполненных полей —
+   без этого правила поле остаётся белым даже после наших правок выше. */
+.promo-input:-webkit-autofill,
+.promo-input:-webkit-autofill:focus,
+.promo-input:-webkit-autofill:hover {
+  -webkit-text-fill-color: var(--text-main);
+  -webkit-box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  box-shadow: 0 0 0 1000px var(--card-bg-2) inset;
+  caret-color: var(--silver-2);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+.promo-apply-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: none;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.promo-apply-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-apply-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.promo-apply-btn--applied {
+  border: 1px solid var(--green);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+  box-shadow: 0 0 16px rgba(34, 197, 94, 0.35);
+}
+
+.promo-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-dim);
+  transition: color 0.15s ease;
+}
+
+.promo-status.success { color: #4ade80; }
+.promo-status.error { color: #f87171; }
+
+.promo-status:empty { margin-top: 0; }
+
+.buy-btn-old-price {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-dim);
+  opacity: 0.8;
+  text-decoration: line-through;
+  margin-right: 8px;
+}
+
+.payment-select {
+  display: flex;
+  flex-direction: column;
+}
+
+.payment-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(210, 210, 218, 0.05);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.payment-toggle:active {
+  transform: scale(0.98);
+}
+
+.payment-toggle--open {
+  border-color: var(--silver-1);
+  background: rgba(210, 210, 218, 0.1);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.payment-toggle-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--silver-2);
+}
+
+.payment-toggle-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+.payment-toggle-label {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.payment-toggle-chevron {
+  display: flex;
+  color: var(--text-dim);
+  transition: transform 0.2s ease;
+}
+
+.payment-toggle-chevron svg {
+  width: 18px;
+  height: 18px;
+}
+
+.payment-toggle--open .payment-toggle-chevron {
+  transform: rotate(180deg);
+}
+
+.payment-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  padding: 0 1px;
+  transition: max-height 0.28s ease, opacity 0.2s ease, margin-top 0.28s ease;
+}
+
+.payment-options--open {
+  max-height: 320px;
+  opacity: 1;
+  margin-top: 8px;
+}
+
+.payment-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(210, 210, 218, 0.05);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+
+.payment-option[hidden] {
+  display: none;
+}
+
+.payment-option:active {
+  transform: scale(0.98);
+}
+
+.payment-option-label {
+  flex: 1;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.payment-option-check {
+  color: var(--silver-2);
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.payment-option--selected .payment-option-check {
+  opacity: 1;
+}
+
+.icon-nft {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.buy-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-top: 16px;
+  font-size: 15px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  color: var(--text-main);
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.buy-btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.buy-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+/* Явно перекрываем свой же display:flex выше для [hidden] — та же логика,
+   что и у .tab[hidden]: авторский display:flex имеет приоритет над
+   стандартным UA-стилем [hidden]{display:none}, поэтому без этого правила
+   кнопки "Купить" (звёзды) и "Нажмите для оплаты" (NFT/RU карта) были бы
+   видны ОБЕ ОДНОВРЕМЕННО при переключении способа оплаты. */
+.buy-btn[hidden] {
+  display: none;
+}
+
+.buy-btn--manual {
+  color: var(--text-main);
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+.card-status {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.card-status.success { color: #4ade80; }
+.card-status.error { color: #f87171; }
+
+/* ============ PROFILE ============ */
+
+.profile-card {
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 32px 22px 26px;
+  text-align: center;
+  margin-bottom: 16px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.profile-avatar-wrap {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto 20px;
+  position: relative;
+}
+
+.profile-avatar,
+.profile-avatar--fallback {
+  position: absolute;
+  inset: 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+}
+
+.profile-avatar {
+  object-fit: cover;
+  border: 2px solid var(--silver-2);
+  box-shadow: 0 0 0 4px rgba(220, 220, 226, 0.14);
+}
+
+.profile-avatar--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #2a2a2f, #131315);
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  color: var(--silver-2);
+  text-shadow: 0 0 16px rgba(255, 255, 255, 0.4);
+}
+
+/* Единственный источник истины для видимости — атрибут [hidden].
+   ID-селектор гарантирует приоритет над любыми другими display-правилами,
+   поэтому фото и заглушка-буква больше никогда не показываются одновременно. */
+#profileAvatar[hidden],
+#profileAvatarFallback[hidden] {
+  display: none !important;
+}
+
+.profile-avatar--fallback svg {
+  width: 38px;
+  height: 38px;
+  stroke: var(--silver-2);
+  opacity: 0.85;
+}
+
+.profile-name {
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 5px;
+  letter-spacing: -0.01em;
+}
+
+.profile-username {
+  font-size: 13.5px;
+  color: var(--text-dim);
+}
+
+/* ============ ПРОФИЛЬ: КНОПКА "МОИ ПРОМОКОДЫ" ============ */
+
+.profile-promo-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin-top: 12px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+  color: var(--text-main);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.profile-promo-btn:active {
+  transform: scale(0.985);
+}
+
+.profile-promo-btn-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(210, 210, 218, 0.1);
+  color: var(--silver-2);
+}
+
+.profile-promo-btn-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.profile-promo-btn-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+}
+
+.profile-promo-btn-chevron {
+  flex-shrink: 0;
+  font-size: 20px;
+  color: var(--text-faint);
+}
+
+/* --- Строка "Светлая тема" + переключатель --- */
+
+.profile-theme-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 15px 16px;
+  margin-top: 10px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.profile-theme-row-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(210, 210, 218, 0.1);
+  color: var(--silver-2);
+}
+
+.profile-theme-row-icon svg {
+  width: 19px;
+  height: 19px;
+}
+
+.profile-theme-row-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.theme-switch {
+  flex-shrink: 0;
+  position: relative;
+  width: 46px;
+  height: 27px;
+  border-radius: 100px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.25s ease, border-color 0.25s ease;
+}
+
+.theme-switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 21px;
+  height: 21px;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #f4f4f6, #cfcfd6);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.theme-switch[aria-checked="true"] {
+  background: linear-gradient(135deg, var(--green), var(--green-dark));
+  border-color: transparent;
+}
+
+.theme-switch[aria-checked="true"] .theme-switch-knob {
+  transform: translateX(19px);
+}
+
+/* ============ СВЕТЛАЯ ТЕМА ============
+   Включается классом .theme-light на <body> (см. initThemeToggle() в
+   script.js). Переопределяем только базовые переменные фона/текста/рамок —
+   акцентные цвета (звезда, зелёный, редкости призов и т.п.) намеренно
+   оставляем как есть, чтобы бейджи и статусы не теряли смысл. */
+body.theme-light {
+  --bg-black: #f4f4f6;
+  --bg-graphite-deep: #ffffff;
+  --bg-graphite-mid: #eceef1;
+  --card-bg: #ffffff;
+  --card-bg-2: #f1f1f4;
+  --border: #e2e2e6;
+  --border-soft: #ececef;
+  --silver-1: #4b4b52;
+  --silver-2: #1c1c1f;
+  --silver-glow: #6c6c74;
+  --text-main: #16161a;
+  --text-dim: #5c5c66;
+  --text-faint: #93939c;
+}
+
+body.theme-light .bg-glow--top,
+body.theme-light .bg-glow--bottom,
+body.theme-light .bg-glow--mid {
+  opacity: 0.08;
+}
+
+/* ============ ЭКРАН "МОИ ПРОМОКОДЫ" ============ */
+
+.promo-list-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.promo-list-actions[hidden] {
+  display: none;
+}
+
+.promo-select-mode-btn,
+.promo-cancel-select-btn,
+.promo-delete-all-btn,
+.promo-delete-selected-btn {
+  padding: 9px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.promo-select-mode-btn:active,
+.promo-cancel-select-btn:active,
+.promo-delete-all-btn:active,
+.promo-delete-selected-btn:active {
+  transform: scale(0.96);
+}
+
+.promo-delete-all-btn {
+  margin-left: auto;
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.promo-delete-selected-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.promo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.promo-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 14px 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+  animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--promo-index, 0) * 60ms + 60ms);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list-item--selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent-soft) 0%, var(--card-bg-2) 100%);
+}
+
+.promo-list-item-checkbox {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 7px;
+  border: 2px solid var(--border);
+  background: var(--card-bg-2);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.promo-list--selecting .promo-list-item-checkbox {
+  display: inline-flex;
+}
+
+.promo-list-item-checkbox:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.promo-list-item-checkbox:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border-right: 2px solid #fff;
+  border-bottom: 2px solid #fff;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.promo-list-item-badge {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 800;
+  padding: 6px 11px;
+  border-radius: 100px;
+}
+
+.promo-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 10px var(--rarity-common-glow);
+}
+.promo-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 10px var(--rarity-uncommon-glow);
+}
+.promo-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 10px var(--rarity-rare-glow);
+}
+.promo-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 10px var(--rarity-epic-glow);
+}
+.promo-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 16px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.promo-list-item-code {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.promo-list-item-use-btn {
+  flex-shrink: 0;
+  padding: 9px 15px;
+  border-radius: 11px;
+  border: none;
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 18px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  transition: transform 0.15s ease;
+}
+
+.promo-list-item-use-btn:active {
+  transform: scale(0.94);
+}
+
+.promo-list-empty {
+  text-align: center;
+  padding: 48px 24px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+/* ============ КЕЙС: ВХОД В МАГАЗИНЕ (квадратная карточка) ============ */
+
+.shop-features {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.case-entry-card {
+  position: relative;
+  width: 136px;
+  aspect-ratio: 1 / 1;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+  animation: card-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--card-index, 1) * 70ms + 150ms);
+}
+
+.case-entry-card:active {
+  transform: scale(0.96);
+  border-color: rgba(245, 166, 35, 0.5);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), 0 0 22px rgba(245, 166, 35, 0.16), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.case-entry-price {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  padding: 3px 7px;
+  border-radius: 100px;
+  color: #3a2400;
+  background: linear-gradient(135deg, #ffdd8a, #f5a623);
+  box-shadow: 0 4px 14px rgba(245, 166, 35, 0.35);
+}
+
+.case-entry-price .icon-star {
+  width: 9px;
+  height: 9px;
+  fill: #3a2400;
+}
+
+.case-entry-icon {
+  width: 72px;
+  height: 72px;
+  margin-top: 6px;
+}
+
+.case-entry-title {
+  font-family: var(--font-display);
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.case-entry-sub {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+/* ============ SVG КЕЙСА (лутбокс) ============ */
+
+.case-box-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.case-box-svg--big {
+  width: 168px;
+  height: 168px;
+  margin: 4px auto 6px;
+  display: block;
+}
+
+.case-box-glow {
+  fill: var(--accent);
+  opacity: 0.28;
+  filter: blur(10px);
+  animation: case-glow-pulse 2.6s ease-in-out infinite;
+  transform-origin: 100px 98px;
+}
+
+.case-box-lid {
+  transform-origin: 100px 84px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.case-box-lock {
+  transition: opacity 0.2s ease;
+}
+
+/* Ленточка и бант — придают коробке вид подарка/приза, а не просто ящика */
+.case-box-ribbon-v,
+.case-box-ribbon-h {
+  pointer-events: none;
+}
+
+.case-box-bow {
+  transform-origin: 100px 108px;
+  animation: case-bow-sway 2.8s ease-in-out infinite;
+}
+
+@keyframes case-bow-sway {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(-3deg); }
+}
+
+/* Бирка "%" на углу коробки — лёгкое покачивание, как настоящий ценник */
+.case-box-percent-tag {
+  transform-origin: 155px 39px;
+  animation: case-tag-swing 2.2s ease-in-out infinite;
+}
+
+@keyframes case-tag-swing {
+  0%, 100% { transform: rotate(0deg); }
+  50% { transform: rotate(6deg); }
+}
+
+.case-box-sparkles path {
+  fill: var(--star);
+  opacity: 0;
+  transform-origin: center;
+  animation: case-sparkle-twinkle 2.4s ease-in-out infinite;
+}
+
+.case-box-sparkles path:nth-child(2) { animation-delay: 0.6s; }
+.case-box-sparkles path:nth-child(3) { animation-delay: 1.2s; }
+.case-box-sparkles path:nth-child(4) { animation-delay: 1.8s; }
+
+@keyframes case-glow-pulse {
+  0%, 100% { opacity: 0.22; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(1.08); }
+}
+
+@keyframes case-sparkle-twinkle {
+  0%, 100% { opacity: 0; transform: scale(0.6) rotate(0deg); }
+  50% { opacity: 1; transform: scale(1) rotate(15deg); }
+}
+
+/* Лёгкое "дыхание" всей коробки в состоянии покоя */
+.case-stage {
+  text-align: center;
+  padding: 6px 0 4px;
+}
+
+.case-stage .case-box-svg--big {
+  animation: case-box-float 3.2s ease-in-out infinite;
+}
+
+@keyframes case-box-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.case-stage-desc {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  max-width: 280px;
+  margin: 0 auto 18px;
+}
+
+/* Пока крутится рулетка — коробка мелко "трясётся", а свечение ускоряется */
+.case-stage--spinning .case-box-svg--big {
+  animation: case-box-shake 0.35s ease-in-out infinite;
+}
+
+.case-stage--spinning .case-box-glow {
+  animation-duration: 0.6s;
+}
+
+.case-stage--spinning .case-box-lid {
+  transform: translateY(-3px) rotate(-1.5deg);
+}
+
+@keyframes case-box-shake {
+  0%, 100% { transform: translateY(-2px) rotate(0deg); }
+  25% { transform: translateY(-2px) rotate(-1.2deg); }
+  75% { transform: translateY(-2px) rotate(1.2deg); }
+}
+
+/* После открытия — крышка сдвинута, коробка замирает */
+.case-stage--opened .case-box-svg--big {
+  animation: none;
+  transform: translateY(-4px);
+}
+
+.case-stage--opened .case-box-lid {
+  transform: translateY(-16px) translateX(2px) rotate(-8deg);
+}
+
+.case-stage--opened .case-box-lock {
+  opacity: 0;
+}
+
+.case-stage--opened .case-box-glow {
+  opacity: 0.5;
+  animation-duration: 1.6s;
+}
+
+/* ============ РУЛЕТКА ПРОКРУТКИ КЕЙСА ============ */
+
+.case-reel-wrap {
+  position: relative;
+  height: 104px;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  margin-bottom: 18px;
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.case-reel-track {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 4px;
+  will-change: transform;
+}
+
+.case-reel-item {
+  flex: 0 0 auto;
+  width: 80px;
+  height: 80px;
+  margin: 0 5px;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 17px;
+}
+
+.case-reel-item--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 10px var(--rarity-common-glow);
+}
+.case-reel-item--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 10px var(--rarity-uncommon-glow);
+}
+.case-reel-item--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 10px var(--rarity-rare-glow);
+}
+.case-reel-item--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 10px var(--rarity-epic-glow);
+}
+.case-reel-item--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 16px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-reel-pointer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  background: var(--silver-2);
+  box-shadow: 0 0 10px rgba(241, 241, 244, 0.65);
+  transform: translateX(-50%);
+  z-index: 2;
+  pointer-events: none;
+}
+
+.case-reel-fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 46px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.case-reel-fade--left {
+  left: 0;
+  background: linear-gradient(90deg, var(--card-bg-2) 0%, transparent 100%);
+}
+
+.case-reel-fade--right {
+  right: 0;
+  background: linear-gradient(270deg, var(--card-bg-2) 0%, transparent 100%);
+}
+
+.case-open-btn {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 14px 18px;
+  font-size: 15px;
+  font-weight: 800;
+  font-family: var(--font-body);
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  box-shadow: 0 8px 24px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.case-open-btn:active {
+  transform: scale(0.97);
+}
+
+.case-open-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+
+.case-result {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+  padding: 20px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  opacity: 0;
+  animation: case-result-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.case-result[hidden] {
+  display: none;
+}
+
+@keyframes case-result-in {
+  from { opacity: 0; transform: scale(0.92) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.case-result-badge {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 800;
+  padding: 4px 16px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--silver-1), var(--silver-2));
+  color: #131316;
+}
+
+/* Цвет редкости приза — задаётся отдельным классом поверх .case-result-badge */
+.case-result-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 14px var(--rarity-common-glow);
+}
+.case-result-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 14px var(--rarity-uncommon-glow);
+}
+.case-result-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 14px var(--rarity-rare-glow);
+}
+.case-result-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 14px var(--rarity-epic-glow);
+}
+.case-result-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 20px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-result-code {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+}
+
+.case-copy-btn {
+  padding: 8px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.case-copy-btn:active {
+  transform: scale(0.96);
+}
+
+.case-copy-btn--copied {
+  border-color: var(--green);
+  background: rgba(34, 197, 94, 0.14);
+  color: #4ade80;
+}
+
+.case-again-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 14px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.case-again-btn[hidden] {
+  display: none;
+}
+
+.case-again-btn svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.case-again-btn:active {
+  transform: scale(0.97);
+}
+
+.case-again-btn:hover {
+  border-color: var(--silver-1);
+}
+
+.case-status {
+  min-height: 16px;
+  margin-top: 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.case-status.success { color: #4ade80; }
+.case-status.error { color: #f87171; }
+
+/* ============ МИНИ-МЕНЮ С ПРОМОКОДОМ (после открытия кейса) ============ */
+
+.case-prize-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* Класс задаёт display:flex, а это правило автора перебивает встроенный
+   UA-стиль "[hidden] { display: none }" по каскаду (author > UA),
+   поэтому модалка иначе оставалась видимой даже с атрибутом hidden —
+   явно возвращаем display:none, когда hidden установлен. */
+.case-prize-modal[hidden] {
+  display: none;
+}
+
+.case-prize-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  /* opacity: 1 — страховка на случай, если анимация ниже по какой-то
+     причине не запустится/не перезапустится повторно. */
+  opacity: 1;
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+@keyframes case-prize-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.case-prize-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 28px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  opacity: 1;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes case-prize-card-in {
+  from { opacity: 0; transform: scale(0.88) translateY(14px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.case-prize-modal-badge {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  padding: 5px 18px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--silver-1), var(--silver-2));
+  color: #131316;
+}
+
+.case-prize-modal-badge.case-result-badge--common {
+  background: linear-gradient(135deg, var(--rarity-common-1), var(--rarity-common-2));
+  color: #12151b;
+  box-shadow: 0 0 14px var(--rarity-common-glow);
+}
+.case-prize-modal-badge.case-result-badge--uncommon {
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+  box-shadow: 0 0 14px var(--rarity-uncommon-glow);
+}
+.case-prize-modal-badge.case-result-badge--rare {
+  background: linear-gradient(135deg, var(--rarity-rare-1), var(--rarity-rare-2));
+  color: #041c38;
+  box-shadow: 0 0 14px var(--rarity-rare-glow);
+}
+.case-prize-modal-badge.case-result-badge--epic {
+  background: linear-gradient(135deg, var(--rarity-epic-1), var(--rarity-epic-2));
+  color: #2c0a3d;
+  box-shadow: 0 0 14px var(--rarity-epic-glow);
+}
+.case-prize-modal-badge.case-result-badge--legendary {
+  background: linear-gradient(135deg, var(--rarity-legendary-1), var(--rarity-legendary-2));
+  color: #3a2400;
+  box-shadow: 0 0 20px var(--rarity-legendary-glow);
+  animation: legendary-glow-pulse 1.6s ease-in-out infinite;
+}
+
+.case-prize-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.case-prize-modal-code {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-main);
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--border);
+  background: var(--card-bg-2);
+}
+
+.case-prize-modal-hint {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.case-prize-modal-ok {
+  width: 100%;
+  margin-top: 6px;
+  padding: 13px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+  font-family: var(--font-body);
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 10px 26px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  transition: transform 0.15s ease;
+}
+
+.case-prize-modal-ok:active {
+  transform: scale(0.97);
+}
+
+.nft-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.nft-modal[hidden] {
+  display: none;
+}
+
+.nft-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 8, 10, 0.7);
+  backdrop-filter: blur(6px);
+  opacity: 1;
+  animation: case-prize-backdrop-in 0.25s ease forwards;
+}
+
+.nft-modal-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 26px 22px 22px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  text-align: center;
+  opacity: 1;
+  animation: case-prize-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.nft-modal-title {
+  font-family: var(--font-display);
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text-main);
+  margin: 0;
+}
+
+.nft-modal-text {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.nft-modal-actions {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.nft-modal-btn {
+  flex: 1;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.nft-modal-btn:active {
+  transform: scale(0.97);
+}
+
+.nft-modal-btn--cancel {
+  background: rgba(210, 210, 218, 0.14);
+  border: 1px solid var(--border);
+  color: var(--text-main);
+}
+
+.nft-modal-btn--write {
+  background: linear-gradient(135deg, var(--manual-btn-1), var(--manual-btn-2) 55%, var(--manual-btn-3));
+  color: var(--text-main);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.16);
+}
+
+/* ============ CHECKOUT VIEW ============ */
+
+.view--checkout {
+  padding-top: 20px;
+}
+
+.checkout-topbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+
+.back-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.back-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.gallery-card,
+.gallery-card,
+.view--checkout .option-group {
+  /* opacity: 1 по умолчанию — контент ВСЕГДА виден, даже если анимация
+     ниже по какой-то причине не запустится/не доиграет в конкретном
+     WebView. Раньше базовым состоянием было opacity: 0, и видимость
+     полностью зависела от того, доиграет ли CSS-анимация — если нет,
+     контент оставался невидимым навсегда. Теперь анимация — это только
+     "бонус" поверх уже видимого контента, а не единственный способ его
+     показать. */
+  opacity: 1;
+}
+
+/* Анимация появления навешивается временным классом .co-anim-in из
+   script.js (см. playCheckoutEntrance) при каждом открытии экрана — явное
+   добавление/удаление класса гораздо надёжнее перезапускает CSS-анимацию
+   в Telegram WebView, чем просто переключение display: none -> block. */
+.gallery-card.co-anim-in,
+.view--checkout .option-group.co-anim-in {
+  opacity: 0;
+  animation: rise-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.view--checkout .buy-btn.co-anim-in {
+  animation: rise-in-transform 0.45s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+/* Задержки каскада (animation-delay) выставляются из script.js по индексу
+   элемента — раньше здесь были селекторы :nth-of-type(1)/(2), которые на
+   самом деле не совпадали ни с одним .option-group (nth-of-type считает
+   позицию среди ВСЕХ div-соседей, а не среди элементов с классом
+   .option-group — первые два div-а перед тарифами это .checkout-hero и
+   .description-card), поэтому каскад задержек фактически не работал. */
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes rise-in-transform {
+  from { transform: translateY(10px); }
+  to { transform: translateY(0); }
+}
+
+.gallery-card {
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.gallery-main {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+
+.gallery-main img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.gallery-thumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.gallery-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 84px;
+  aspect-ratio: 16 / 10;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  background: #000;
+  cursor: pointer;
+}
+
+.gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.gallery-thumb--active {
+  border-color: var(--accent);
+}
+
+/* ============ TAB BAR ============ */
+
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom));
+  background: var(--bg-black);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  border-radius: 14px;
+  color: var(--text-faint);
+  opacity: 0.7;
+  cursor: pointer;
+  transition: color 0.2s ease, background 0.2s ease, opacity 0.2s ease;
+}
+
+/* Явно перекрываем свой же display:flex выше для [hidden] — без этого
+   правила вкладка "Админ" была бы видна ВСЕМ пользователям: браузер
+   применяет обычный display:none для [hidden] только на уровне
+   стандартного UA-стиля с низким приоритетом, а наше собственное правило
+   .tab{display:flex} через авторские стили эту UA-логику перебивает.
+   Именно это было причиной бага "админ-панель доступна для всех". */
+.tab[hidden] {
+  display: none;
+}
+
+.tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  line-height: 1;
+  color: inherit;
+}
+
+.tab-icon svg {
+  width: 21px;
+  height: 21px;
+  flex-shrink: 0;
+}
+
+.tab-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: inherit;
+}
+
+.tab--active {
+  color: var(--silver-2);
+  opacity: 1;
+  background: rgba(210, 210, 218, 0.12);
+}
+
+.tab--active .tab-label {
+  font-weight: 700;
+}
+
+/* ============ АДМИН-ПАНЕЛЬ ============ */
+
+.admin-block {
+  margin-top: 22px;
+}
+
+.admin-block:first-of-type {
+  margin-top: 8px;
+}
+
+.admin-block .promo-row {
+  margin-top: 10px;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.admin-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+/* Сегментированный переключатель (срок ключа, авто/да/нет для наличия) —
+   компактные равные по ширине кнопки в общей "капсуле", вместо отдельных
+   ярких кнопок-стрелок вида .promo-apply-btn. */
+.admin-segmented {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 13px;
+  background: var(--card-bg-2);
+  border: 1px solid var(--border);
+}
+
+.admin-segmented-btn {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 9px 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.admin-segmented-btn:active {
+  transform: scale(0.96);
+}
+
+.admin-segmented-btn--active {
+  background: linear-gradient(135deg, var(--graphite-btn-1), var(--graphite-btn-2) 55%, var(--graphite-btn-3));
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 12px var(--graphite-btn-glow), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Модификаторы для переключателя "в наличии" — "Да"/"Нет" получают
+   смысловой цвет (зелёный/красный) вместо нейтрального серого, чтобы
+   состояние читалось с одного взгляда. */
+.admin-segmented-btn--positive.admin-segmented-btn--active {
+  background: rgba(34, 197, 94, 0.16);
+  color: #4ade80;
+  box-shadow: 0 0 14px rgba(34, 197, 94, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.admin-segmented-btn--negative.admin-segmented-btn--active {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  box-shadow: 0 0 14px rgba(239, 68, 68, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Приглушённая кнопка для второстепенных/обслуживающих действий в
+   админке (уборка мусора и т.п.) — не должна конкурировать по весу с
+   основной кнопкой действия (.promo-apply-btn). */
+.admin-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 7px;
+  margin-top: 4px;
+  padding: 9px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.admin-ghost-btn svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.admin-ghost-btn:active {
+  transform: scale(0.96);
+  border-color: var(--red);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.admin-ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+.admin-form-input {
+  flex: 1;
+  width: 100%;
+}
+
+/* .promo-input по умолчанию завязан на .promo-input-wrap (с иконкой) —
+   здесь переиспользуем те же визуальные стили (фон/бордер/паддинг) для
+   простых полей без иконки-обёртки. */
+input.admin-form-input.promo-input {
+  padding: 13px 14px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: var(--card-bg-2);
+  color: var(--text-main);
+  font-family: var(--font-body);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+input.admin-form-input.promo-input:focus {
+  border-color: var(--accent);
+}
+
+.admin-form-submit {
+  margin-top: 2px;
+}
+
+.admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.admin-list-empty {
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.admin-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border-radius: 15px;
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--card-bg) 0%, var(--card-bg-2) 100%);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+.admin-list-item-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-list-item-title {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-list-item-sub {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.admin-list-item-badge {
+  flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 12.5px;
+  font-weight: 800;
+  padding: 5px 10px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, var(--rarity-uncommon-1), var(--rarity-uncommon-2));
+  color: #042e28;
+}
+
+.admin-list-item-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.1);
+  color: #f87171;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.admin-list-item-remove svg {
+  width: 15px;
+  height: 15px;
+}
+
+.admin-list-item-remove:active {
+  transform: scale(0.92);
+}
+
+/* ============ RESPONSIVE ============ */
+
+@media (min-width: 480px) {
+  .product-grid {
+    max-width: 480px;
+    margin: 0 auto;
+    width: 100%;
   }
-}
-
-// ====== Реальная высота вьюпорта (фикс для клавиатуры) ======
-// 100dvh на iOS не всегда пересчитывается, когда открывается клавиатура —
-// из-за этого нижняя часть интерфейса (промокод, кнопка "Купить", таббар)
-// уезжала под клавиатуру и всё "ломалось" визуально. window.visualViewport
-// даёт настоящую видимую высоту, на неё и завязываемся.
-// Заодно, пока клавиатура открыта, прячем нижний таббар — на экране
-// оформления он всё равно не нужен, а место для полей освобождает.
-function setAppHeight() {
-  const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", vh + "px");
-
-  const keyboardLikelyOpen = window.innerHeight - vh > 120;
-  document.body.classList.toggle("keyboard-open", keyboardLikelyOpen);
-}
-
-setAppHeight();
-
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", setAppHeight);
-} else {
-  window.addEventListener("resize", setAppHeight);
-}
-
-// Также ещё раз "поджимаем" жест закрытия шторки при каждом ресайзе —
-// на некоторых клиентах открытие клавиатуры сбрасывает это состояние.
-if (tg) {
-  window.addEventListener("resize", () => {
-    try {
-      tg.disableVerticalSwipes?.();
-    } catch (err) {
-      // игнорируем
-    }
-  });
-}
-
-// ====== Владелец ======
-// id владельца — держим тут только для справки/комментариев. Видимость
-// вкладки "Админ" и всех прав больше НЕ проверяется по этой константе на
-// клиенте: теперь она полностью решается сервером через /admin/whoami (по
-// подписанному initData), т.к. владелец может назначать других админов с
-// произвольными id — см. checkAdminAccess() ниже.
-const ADMIN_ID = 8606714114;
-
-// Запускаем проверку бана СРАЗУ, не дожидаясь окончания сплэша — так к
-// моменту, когда сплэш обычно скрывается, ответ сервера уже готов и не
-// добавляет дополнительной задержки.
-//
-// У fetch() нет встроенного таймаута: если сервер недоступен, спит или
-// просто не отвечает, запрос может зависнуть на неопределённое время, а
-// экран загрузки (см. hideSplash ниже) ждёт именно этот промис — из-за
-// этого сплэш мог не скрываться вообще. AbortController здесь обрывает
-// запрос через CHECK_BAN_TIMEOUT_MS и считает пользователя не забаненным,
-// если сервер не успел ответить.
-const CHECK_BAN_TIMEOUT_MS = 4000;
-
-function checkBanStatus() {
-  if (!tg) return Promise.resolve(false);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), CHECK_BAN_TIMEOUT_MS);
-
-  return fetch("/check_ban", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ init_data: tg.initData }),
-    signal: controller.signal,
-  })
-    .then((r) => r.json())
-    .then((data) => !!data.banned)
-    .catch(() => false)
-    .finally(() => clearTimeout(timeoutId));
-}
-
-const banStatusPromise = checkBanStatus();
-
-// ====== Сплэш / плавное появление ======
-const splash = document.getElementById("splash");
-const app = document.getElementById("app");
-const bannedScreen = document.getElementById("bannedScreen");
-
-let splashDone = false;
-
-async function hideSplash() {
-  if (splashDone) return;
-  splashDone = true;
-
-  // Доп. страховка сверху таймаута внутри checkBanStatus: даже если он по
-  // какой-то причине не сработает, через HIDE_SPLASH_FALLBACK_MS сплэш всё
-  // равно скроется (считая пользователя не забаненным), а не будет висеть
-  // бесконечно.
-  const HIDE_SPLASH_FALLBACK_MS = 5000;
-  const fallback = new Promise((resolve) => setTimeout(() => resolve(false), HIDE_SPLASH_FALLBACK_MS));
-  const banned = await Promise.race([banStatusPromise, fallback]).catch(() => false);
-
-  splash.classList.add("splash--hidden");
-
-  if (banned) {
-    // Пользователь забанен — вместо приложения показываем экран-заглушку
-    // и дальше приложение не инициализируем вовсе.
-    bannedScreen.hidden = false;
-    return;
-  }
-
-  app.classList.add("app--ready");
-  initApp();
-
-  // Сплэш полностью убираем из DOM после того, как доиграет его opacity-
-  // transition (0.5s). До этого момента CSS уже ставит его анимации на
-  // паузу (.splash--hidden — см. style.css), но сам узел с обвязкой
-  // (5 keyframe-анимаций, blur-фильтры) до сих пор существовал в дереве
-  // документа всю сессию просто "на всякий случай". Явное удаление — либо
-  // по событию transitionend, либо (страховка) по таймеру — освобождает
-  // память и убирает лишние слои у браузера.
-  let splashRemoved = false;
-  function removeSplash() {
-    if (splashRemoved) return;
-    splashRemoved = true;
-    splash.remove();
-  }
-  splash.addEventListener("transitionend", removeSplash, { once: true });
-  setTimeout(removeSplash, 700);
-}
-
-// Сплэш показывается РОВНО 4 секунды — фиксированная длительность, а не
-// "пока реально грузится". Заодно эти 4 секунды не тратятся впустую: пока
-// крутится спиннер, в фоне прогреваются шрифты и скрытые вкладки (см.
-// warmUpHiddenViews/preloadFonts ниже) — это устраняет баг с задержкой
-// появления интерфейса при первом открытии "Моих промокодов" или
-// "Оформления заказа".
-const SPLASH_DURATION = 2500;
-setTimeout(hideSplash, SPLASH_DURATION);
-
-// ====== Рендер карточек товаров ======
-const productList = document.getElementById("productList");
-const cardTemplate = document.getElementById("productCardTemplate");
-const durationTemplate = document.getElementById("durationOptionTemplate");
-
-// Стартовая цена для пилюли на обложке карточки ("от 550 ₽") — берём
-// минимальную цену среди тарифов RU-карты (самый короткий срок, 7 дней),
-// т.к. это единственный способ оплаты с ценой именно в рублях.
-function getStartingRubPrice() {
-  const values = Object.values(RU_CARD_PRICES);
-  const min = Math.min(...values);
-  return min.toLocaleString("ru-RU");
-}
-
-// Иконки для пилюли с ценой на карточке — те же самые SVG, что и в
-// способах оплаты на экране оформления (см. #paymentOptions в index.html),
-// чтобы звёзды/доллары/гривны/рубли выглядели одинаково везде.
-const HERO_PRICE_STAR_ICON =
-  '<svg class="card-hero-price-icon card-hero-price-icon--star" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 14.47 8.6 21.51 8.91 16 13.3 17.88 20.09 12 16.2 6.12 20.09 8.01 13.3 2.49 8.91 9.53 8.6Z"/></svg>';
-
-function heroPriceBadgeIcon(symbol) {
-  return (
-    '<svg class="card-hero-price-icon card-hero-price-icon--badge" viewBox="0 0 24 24" aria-hidden="true">' +
-    '<circle cx="12" cy="12" r="11" fill="currentColor" opacity="0.15"/>' +
-    '<text x="12" y="17.5" text-anchor="middle" font-family="\'Golos Text\', Arial, sans-serif" font-size="15" font-weight="800" fill="currentColor">' +
-    symbol +
-    "</text></svg>"
-  );
-}
-
-// Пилюля с ценой на карточке магазина по очереди показывает стартовую
-// цену в каждом из способов оплаты (7-дневный тариф — самый дешёвый),
-// с плавной анимацией перехода между значениями (см. .card-hero-price-value
-// и класс .is-fading в style.css). Вместо слов "звёзд"/"грн" используем
-// те же SVG-иконки, что и в списке способов оплаты в тарифах.
-function buildHeroPriceCycle() {
-  return [
-    `${getStartingRubPrice()} ${heroPriceBadgeIcon("₽")}`,
-    `${DURATIONS[0].price.toLocaleString("ru-RU")} ${HERO_PRICE_STAR_ICON}`,
-    `${XROCKET_PRICES["7d"]} ${heroPriceBadgeIcon("$")}`,
-    `${UAH_CARD_PRICES["7d"].toLocaleString("ru-RU")} ${heroPriceBadgeIcon("₴")}`,
-  ];
-}
-
-// ID интервалов анимации цены на карточках — чистятся при каждом
-// перерисовывании списка, чтобы при повторном renderProducts() не
-// накапливались "осиротевшие" таймеры на удалённых из DOM карточках.
-let heroPriceIntervals = [];
-
-function renderProducts() {
-  productList.innerHTML = "";
-  heroPriceIntervals.forEach((id) => clearInterval(id));
-  heroPriceIntervals = [];
-
-  PRODUCTS.forEach((product, index) => {
-    const node = cardTemplate.content.cloneNode(true);
-    const card = node.querySelector(".card");
-    card.dataset.productId = product.id;
-    card.style.setProperty("--card-index", index);
-
-    const btn = node.querySelector(".card-hero-btn");
-    const badgesEl = node.querySelector(".card-hero-badges");
-
-    (product.badges || []).forEach((badgeText) => {
-      const b = document.createElement("span");
-      // UNDETECTED — статус безопасности, выделяем его зелёным, как
-      // положительный индикатор. ROOT — предупреждающий статус (нужен
-      // root-доступ), выделяем его красным по тому же принципу. Остальные
-      // возможные бейджи остаются в нейтральном тёмном стиле.
-      let badgeClass = "card-hero-badge";
-      if (badgeText === "UNDETECTED") badgeClass += " card-hero-badge--accent";
-      else if (badgeText === "ROOT") badgeClass += " card-hero-badge--danger";
-      b.className = badgeClass;
-      b.textContent = badgeText;
-      badgesEl.appendChild(b);
-    });
-
-    node.querySelector(".card-hero-title").textContent = product.title;
-    node.querySelector(".card-hero-subtitle").textContent = product.subtitle;
-
-    const platformsEl = node.querySelector(".card-hero-platforms");
-    if (platformsEl) {
-      (product.platforms || []).forEach((key) => {
-        const meta = PLATFORM_ICONS[key];
-        if (!meta) return;
-        const span = document.createElement("span");
-        span.className = "card-hero-platform";
-        span.title = meta.label;
-        span.setAttribute("aria-label", meta.label);
-        span.innerHTML = meta.svg;
-        platformsEl.appendChild(span);
-      });
-
-      if (product.autoDelivery) {
-        const auto = document.createElement("span");
-        auto.className = "card-hero-auto-badge";
-        auto.title = "Ключ выдаётся ботом сразу после оплаты";
-        auto.innerHTML = `${AUTO_DELIVERY_ICON_SVG}<span>Автоматическая выдача</span>`;
-        platformsEl.appendChild(auto);
-      }
-    }
-
-    const priceValueEl = node.querySelector(".card-hero-price-value");
-    if (priceValueEl) {
-      const cycle = buildHeroPriceCycle();
-      let cycleIndex = 0;
-      priceValueEl.innerHTML = cycle[cycleIndex];
-
-      const intervalId = setInterval(() => {
-        priceValueEl.classList.add("is-fading");
-        setTimeout(() => {
-          cycleIndex = (cycleIndex + 1) % cycle.length;
-          priceValueEl.innerHTML = cycle[cycleIndex];
-          priceValueEl.classList.remove("is-fading");
-        }, 260);
-      }, 2200);
-      heroPriceIntervals.push(intervalId);
-    }
-
-    // Клик по карточке — переходим на отдельный экран оформления покупки
-    btn.addEventListener("click", () => {
-      openCheckout(product);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    productList.appendChild(node);
-  });
-}
-
-function getFinalPrice(basePrice, discountPercent) {
-  if (!discountPercent) return basePrice;
-  // floor, а не round — так же, как считает сервер (apply_promo в bot.py),
-  // чтобы цена на экране всегда совпадала с той, что реально спишется.
-  return Math.max(1, Math.floor(basePrice * (1 - discountPercent / 100)));
-}
-
-// Считает итоговую цену с округлением до центов (2 знака) — так же, как
-// apply_promo_float на сервере (bot.py) для xRocket, чтобы цена на экране
-// совпадала с той, что реально спишется в USDT.
-function getFinalPriceFloat(basePrice, discountPercent) {
-  if (!discountPercent) return Math.round(basePrice * 100) / 100;
-  return Math.max(0.01, Math.round(basePrice * (1 - discountPercent / 100) * 100) / 100);
-}
-
-// Форматирует сумму для отображения: для xRocket знак доллара ставится
-// перед числом без пробела ("$7"), для остальных способов (Stars/₽/₴)
-// используется прежний порядок "число + значок/символ".
-function formatAmount(amount, isXRocket) {
-  if (isXRocket) return `${XROCKET_CURRENCY}${amount}`;
-  return `${amount} ${STAR_ICON_SVG}`;
-}
-
-function updateBuyButtonLabel(buyBtnText, product, durationCode) {
-  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-
-  // Кнопка "Купить" (checkoutBuyBtn) используется и для Stars, и для
-  // xRocket — оба способа автоматические (в отличие от NFT/card/uah,
-  // которые оформляются перепиской через checkoutManualBtn).
-  const isXRocket = checkoutPaymentMethod === "xrocket";
-  const basePrice = isXRocket ? XROCKET_PRICES[duration.code] : duration.price;
-  const finalPrice = isXRocket
-    ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
-    : getFinalPrice(basePrice, checkoutDiscountPercent);
-  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
-
-  // Зачёркнутая исходная цена показывается прямо на кнопке "Купить" рядом
-  // с новой ценой со скидкой — работает для любого процента скидки
-  // (в т.ч. 5%), т.к. итоговая цена всегда считается на сервере (floor).
-  if (hasDiscount) {
-    checkoutOldPrice.innerHTML = formatAmount(basePrice, isXRocket);
-    checkoutOldPrice.hidden = false;
-  } else {
-    checkoutOldPrice.hidden = true;
-  }
-
-  buyBtnText.innerHTML = hasDiscount
-    ? `Купить за ${formatAmount(finalPrice, isXRocket)}`
-    : `Купить за ${formatAmount(basePrice, isXRocket)}`;
-}
-
-// Отрисовывает цену тарифа в блоке "Тариф" в зависимости от выбранного
-// способа оплаты: звёзды и RU карта показывают цену с учётом промокода
-// (зачёркнутая исходная цена + цена со скидкой, если промокод применён),
-// NFT — предложение узнать цену у владельца (оформляется вручную, у него
-// нет фиксированной цены, поэтому скидку тут не считаем).
-function applyDurationPrice(priceEl, duration) {
-  if (!priceEl) return;
-
-  if (duration.available === false) {
-    priceEl.classList.remove("duration-option-price--note");
-    priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.classList.add("duration-option-price--unavailable");
-    priceEl.textContent = "Нет в наличии";
-    return;
-  }
-
-  // Реальный остаток ключей на складе (ACCESS_KEYS/EXTRA_ACCESS_KEYS)
-  // касается только автоматических способов оплаты (Stars и xRocket) —
-  // они выдают ключ сразу и без участия человека. NFT, RU-карта и гривна
-  // оформляются вручную владельцем/администратором в переписке, поэтому
-  // для них цена показывается как обычно, даже если ключи закончились.
-  // Проверяется остаток именно этого срока — наличие ключей на 30 дней не
-  // должно "маскировать" отсутствие ключей на 12 месяцев, и наоборот.
-  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
-  if (isAutoMethod && checkoutStockByDuration[duration.code] === false) {
-    priceEl.classList.remove("duration-option-price--note");
-    priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.classList.add("duration-option-price--unavailable");
-    priceEl.textContent = "Нет в наличии";
-    return;
-  }
-  priceEl.classList.remove("duration-option-price--unavailable");
-
-  if (checkoutPaymentMethod === "nft") {
-    priceEl.classList.add("duration-option-price--note");
-    priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.textContent = "Узнайте цену у владельца";
-    return;
-  }
-
-  priceEl.classList.remove("duration-option-price--note");
-
-  const isCard = checkoutPaymentMethod === "card";
-  const isUah = checkoutPaymentMethod === "uah";
-  const isXRocket = checkoutPaymentMethod === "xrocket";
-  const basePrice = isCard
-    ? RU_CARD_PRICES[duration.code]
-    : isUah
-      ? UAH_CARD_PRICES[duration.code]
-      : isXRocket
-        ? XROCKET_PRICES[duration.code]
-        : duration.price;
-
-  if (basePrice == null) {
-    priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.innerHTML = "—";
-    return;
-  }
-
-  const finalPrice = isXRocket
-    ? getFinalPriceFloat(basePrice, checkoutDiscountPercent)
-    : getFinalPrice(basePrice, checkoutDiscountPercent);
-  const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
-
-  const format = (value) => {
-    if (isCard) return `${value} ₽`;
-    if (isUah) return `${value} ₴`;
-    if (isXRocket) return formatAmount(value, true);
-    return `${value} ${STAR_ICON_SVG}`;
-  };
-
-  if (hasDiscount) {
-    priceEl.classList.add("duration-option-price--discounted");
-    priceEl.innerHTML =
-      `<span class="duration-option-price-old">${format(basePrice)}</span>` +
-      `<span class="duration-option-price-new">${format(finalPrice)}</span>`;
-  } else {
-    priceEl.classList.remove("duration-option-price--discounted");
-    priceEl.innerHTML = format(basePrice);
-  }
-}
-
-// Перерисовывает цены во всех уже отрендеренных карточках тарифа —
-// вызывается при смене способа оплаты, чтобы цены сразу обновились без
-// необходимости заново открывать экран оформления.
-function refreshDurationPrices() {
-  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
-  checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
-    const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
-    if (!duration) return;
-    applyDurationPrice(btn.querySelector(".duration-option-price"), duration);
-
-    // Тариф недоступен для клика, если он либо выключен статически
-    // (duration.available === false), либо (для Stars/xRocket) на него
-    // реально не осталось ключей — проверяется отдельно на каждый срок.
-    const outOfStock = isAutoMethod && checkoutStockByDuration[duration.code] === false;
-    const isSelectable = duration.available !== false && !outOfStock;
-    btn.classList.toggle("duration-option--disabled", !isSelectable);
-    btn.disabled = !isSelectable;
-    if (!isSelectable) {
-      btn.setAttribute("aria-disabled", "true");
-    } else {
-      btn.removeAttribute("aria-disabled");
-    }
-  });
-
-  // Если выбранный сейчас тариф оказался недоступен (например, только что
-  // закончились ключи именно на этот срок) — блокируем кнопку "Купить" и
-  // здесь тоже, а не только в setPaymentMethod/openCheckout.
-  checkoutBuyBtn.disabled = isAutoMethod && !isDurationSellable(checkoutDuration);
-}
-
-function setCardStatus(statusEl, text, type = "") {
-  statusEl.textContent = text;
-  statusEl.className = "card-status" + (type ? " " + type : "");
-}
-
-function setPromoStatus(text, type = "") {
-  checkoutPromoStatus.textContent = text;
-  checkoutPromoStatus.className = "promo-status" + (type ? " " + type : "");
-}
-
-async function getInvoiceLink(productId, durationCode, promoCode) {
-  const initData = tg ? tg.initData : "";
-
-  const response = await fetch("/create_invoice", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      product_id: productId,
-      duration: durationCode,
-      promo_code: promoCode || undefined,
-      init_data: initData,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Сервер не смог создать инвойс");
-  }
-
-  const data = await response.json();
-  if (!data.invoice_link) {
-    throw new Error("Сервер не вернул ссылку на инвойс");
-  }
-
-  return data;
-}
-
-// ====== xRocket Pay (крипта) ======
-// В отличие от Stars, у xRocket нет встроенного в Telegram колбэка вроде
-// tg.openInvoice — ссылка на оплату открывается как обычная веб-страница
-// (или чат с ботом @xRocket), а результат оплаты бот получает отдельно,
-// через вебхук на сервере (см. /xrocket_webhook в bot.py). Поэтому здесь
-// после открытия ссылки просто опрашиваем сервер, пока статус счёта не
-// станет "paid" (или пока не истечёт время ожидания).
-
-async function getXRocketInvoice(productId, durationCode, promoCode) {
-  const initData = tg ? tg.initData : "";
-
-  const response = await fetch("/create_invoice_xrocket", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      product_id: productId,
-      duration: durationCode,
-      promo_code: promoCode || undefined,
-      init_data: initData,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error("Сервер не смог создать счёт xRocket");
-  }
-
-  const data = await response.json();
-  if (!data.invoice_link || !data.invoice_id) {
-    throw new Error("Сервер не вернул ссылку на оплату xRocket");
-  }
-
-  return data;
-}
-
-// Опрашивает статус счёта xRocket раз в 2.5с. Останавливается, когда счёт
-// оплачен, когда истёк таймаут (по умолчанию 10 минут — счёт живёт 30 мин
-// на сервере, но незачем держать пользователя на экране дольше) или когда
-// вызвали cancel() (например, ушли с экрана оформления).
-function pollXRocketInvoice(invoiceId, { intervalMs = 2500, timeoutMs = 10 * 60 * 1000 } = {}) {
-  let cancelled = false;
-  const startedAt = Date.now();
-
-  const promise = new Promise((resolve) => {
-    const tick = async () => {
-      if (cancelled) return resolve("cancelled");
-      if (Date.now() - startedAt > timeoutMs) return resolve("timeout");
-
-      try {
-        const res = await fetch(`/xrocket_invoice_status?invoice_id=${encodeURIComponent(invoiceId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.status === "paid") return resolve("paid");
-        }
-      } catch (err) {
-        // сетевая ошибка — просто попробуем ещё раз на следующем тике
-      }
-
-      setTimeout(tick, intervalMs);
-    };
-
-    tick();
-  });
-
-  return { promise, cancel: () => { cancelled = true; } };
-}
-
-async function handleBuyXRocket(product, durationCode, buyBtn, buyBtnText, statusEl) {
-  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-
-  buyBtn.disabled = true;
-  buyBtnText.textContent = "Открываем оплату...";
-  setCardStatus(statusEl, "");
-
-  try {
-    const invoiceData = await getXRocketInvoice(product.id, durationCode, checkoutPromoCode);
-
-    if (checkoutPromoCode && invoiceData.promo_invalid) {
-      checkoutPromoCode = null;
-      checkoutDiscountPercent = 0;
-      checkoutPromoApply.textContent = "Применить";
-      checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-      checkoutPromoInput.disabled = false;
-      checkoutPromoInput.value = "";
-      setPromoStatus("Промокод не найден или уже использован, покупка по полной цене", "error");
-    }
-
-    // Ссылка на оплату xRocket — это обычно t.me-ссылка (переход в бота
-    // @xRocket или в его мини-апп для оплаты). tg.openLink() для таких
-    // ссылок открывает внешний/встроенный БРАУЗЕР — именно это и уводило
-    // из Telegram. tg.openTelegramLink() вместо этого просит сам клиент
-    // Telegram обработать t.me-ссылку своими средствами: переключиться на
-    // чат/мини-апп внутри приложения, без браузера.
-    //
-    // Если xRocket в ответе присылает отдельную ссылку на именно
-    // мини-апп оплаты (например, поле miniApp/webApp — нужно проверить
-    // реальный ответ своего API-ключа, см. комментарий у xrocket_request
-    // в bot.py), лучше открывать её тем же способом — тогда пользователя
-    // не перекинет даже на экран чата с ботом и не понадобится нажимать
-    // "Старт": просто замени invoiceData.invoice_link на это поле здесь
-    // и в create_invoice_xrocket_handler/create_case_invoice_xrocket_handler.
-    const link = invoiceData.invoice_link;
-    if (tg?.openTelegramLink && /^https?:\/\/(www\.)?t\.me\//i.test(link)) {
-      tg.openTelegramLink(link);
-    } else if (tg?.openLink) {
-      tg.openLink(link, { try_instant_view: false });
-    } else {
-      window.open(link, "_blank");
-    }
-
-    setCardStatus(statusEl, "Ждём оплату в xRocket...");
-    buyBtnText.textContent = "Ожидание оплаты...";
-
-    const { promise } = pollXRocketInvoice(invoiceData.invoice_id);
-    const result = await promise;
-
-    buyBtn.disabled = false;
-    refreshAllPrices();
-
-    if (result === "paid") {
-      setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
-      tg?.HapticFeedback?.notificationOccurred("success");
-    } else if (result === "timeout") {
-      setCardStatus(statusEl, "Время ожидания оплаты истекло. Если оплатили — доступ придёт от бота отдельным сообщением.");
-    } else {
-      setCardStatus(statusEl, "Ожидание оплаты отменено");
-    }
-  } catch (err) {
-    buyBtn.disabled = false;
-    refreshAllPrices();
-    setCardStatus(statusEl, err.message || "Ошибка при создании оплаты xRocket", "error");
-  }
-}
-
-async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
-  if (!tg) {
-    setCardStatus(statusEl, "Открой это приложение внутри Telegram", "error");
-    return;
-  }
-
-  const selectedDuration = DURATIONS.find((d) => d.code === durationCode);
-  if (selectedDuration && selectedDuration.available === false) {
-    setCardStatus(statusEl, "Этот тариф сейчас нет в наличии", "error");
-    return;
-  }
-
-  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
-  if (isAutoMethod && checkoutStockByDuration[durationCode] === false) {
-    setCardStatus(statusEl, "Этот тариф временно нет в наличии — ключи на этот срок раскуплены", "error");
-    return;
-  }
-
-  if (checkoutPaymentMethod === "xrocket") {
-    return handleBuyXRocket(product, durationCode, buyBtn, buyBtnText, statusEl);
-  }
-
-  const duration = DURATIONS.find((d) => d.code === durationCode) || DURATIONS[0];
-
-  buyBtn.disabled = true;
-  buyBtnText.textContent = "Открываем оплату...";
-  setCardStatus(statusEl, "");
-
-  try {
-    const invoiceData = await getInvoiceLink(product.id, durationCode, checkoutPromoCode);
-    const invoiceLink = invoiceData.invoice_link;
-
-    // Сервер — источник истины по промокодам. Если он не распознал код,
-    // который клиент посчитал валидным (например, код успели использовать
-    // в другом месте, он истёк, или состояние сервера сбросилось), нельзя
-    // просто показать текст ошибки поверх — нужно ПОЛНОСТЬЮ сбросить
-    // визуальное состояние "применено", иначе кнопка промокода остаётся
-    // зелёной ("Применено"), а под ней текст говорит, что код не найден —
-    // именно это выглядело как баг на скриншоте.
-    if (checkoutPromoCode && invoiceData.promo_invalid) {
-      checkoutPromoCode = null;
-      checkoutDiscountPercent = 0;
-      checkoutPromoApply.textContent = "Применить";
-      checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-      checkoutPromoInput.disabled = false;
-      checkoutPromoInput.value = "";
-      setPromoStatus("Промокод не найден или уже использован, покупка по полной цене", "error");
-    }
-
-    tg.openInvoice(invoiceLink, (status) => {
-      buyBtn.disabled = false;
-      refreshAllPrices();
-
-      if (status === "paid") {
-        setCardStatus(statusEl, `Оплата прошла! Доступ на ${duration.label} выдан.`, "success");
-        tg.HapticFeedback?.notificationOccurred("success");
-      } else if (status === "cancelled") {
-        setCardStatus(statusEl, "Оплата отменена");
-      } else if (status === "failed") {
-        setCardStatus(statusEl, "Оплата не прошла", "error");
-      } else {
-        setCardStatus(statusEl, "Статус: " + status);
-      }
-    });
-  } catch (err) {
-    buyBtn.disabled = false;
-    refreshAllPrices();
-    setCardStatus(statusEl, err.message || "Ошибка при создании оплаты", "error");
-  }
-}
-
-// ====== Экран оформления покупки (checkout) ======
-const viewCheckout = document.getElementById("view-checkout");
-const checkoutTitle = document.getElementById("checkoutTitle");
-const galleryMain = document.getElementById("galleryMain");
-const galleryMainImg = document.getElementById("galleryMainImg");
-const galleryThumbs = document.getElementById("galleryThumbs");
-const checkoutDurations = document.getElementById("checkoutDurations");
-const checkoutBuyBtn = document.getElementById("checkoutBuyBtn");
-const checkoutBuyText = document.getElementById("checkoutBuyText");
-const checkoutOldPrice = document.getElementById("checkoutOldPrice");
-const checkoutStatus = document.getElementById("checkoutStatus");
-const checkoutBack = document.getElementById("checkoutBack");
-const checkoutPromoInput = document.getElementById("checkoutPromoInput");
-const checkoutPromoApply = document.getElementById("checkoutPromoApply");
-const checkoutPromoStatus = document.getElementById("checkoutPromoStatus");
-
-// ====== Способ оплаты (Telegram Stars / NFT / Русская карта) ======
-const paymentSelect = document.getElementById("paymentSelect");
-const paymentToggle = document.getElementById("paymentToggle");
-const paymentToggleIcon = document.getElementById("paymentToggleIcon");
-const paymentToggleLabel = document.getElementById("paymentToggleLabel");
-const paymentOptions = document.getElementById("paymentOptions");
-const checkoutManualBtn = document.getElementById("checkoutManualBtn");
-const checkoutManualOldPrice = document.getElementById("checkoutManualOldPrice");
-const checkoutManualText = document.getElementById("checkoutManualText");
-const nftModal = document.getElementById("nftModal");
-const nftModalBackdrop = document.getElementById("nftModalBackdrop");
-const nftModalTitle = document.getElementById("nftModalTitle");
-const nftModalText = document.getElementById("nftModalText");
-const nftModalCancel = document.getElementById("nftModalCancel");
-const nftModalWrite = document.getElementById("nftModalWrite");
-
-// Telegram-логины, которым пишет пользователь при оплате способами,
-// оформляемыми вручную (NFT, RU карта, UAH). Оплата гривнами ведёт к
-// администратору (alyuplost), NFT и RU карта — к владельцу
-// (meaninglessperson). Задаётся отдельно на каждый способ в
-// MANUAL_PAYMENT_METHODS через поле ownerUsername.
-const MANUAL_PAYMENT_OWNER_USERNAME = "meaninglessperson";
-
-// Способы оплаты, которые оформляются не автоматически, а перепиской в
-// личных сообщениях (с владельцем или администратором — см. ownerUsername
-// у каждого способа). Чтобы добавить новый такой способ, достаточно
-// добавить сюда запись и кнопку .payment-option с тем же data-method в
-// разметке.
-const MANUAL_PAYMENT_METHODS = {
-  nft: {
-    buyLabel: "Нажмите для оплаты NFT",
-    modalTitle: "Оплата NFT",
-    modalText: "Напишите владельцу, чтобы оформить оплату NFT",
-    ownerUsername: "meaninglessperson",
-  },
-  card: {
-    buyLabel: "Нажмите для оплаты RU картой",
-    modalTitle: "Оплата RU картой",
-    modalText: "Напишите владельцу, чтобы оформить оплату RU картой",
-    ownerUsername: "meaninglessperson",
-  },
-  uah: {
-    buyLabel: "Нажмите для оплаты UAH (Гривны)",
-    modalTitle: "Оплата UAH (Гривны)",
-    modalText: "Напишите администратору, чтобы оформить оплату гривной",
-    ownerUsername: "alyuplost",
-  },
-};
-
-let checkoutPaymentMethod = "stars";
-
-function updatePaymentToggleSummary(method) {
-  const optionBtn = paymentOptions.querySelector(`.payment-option[data-method="${method}"]`);
-  if (!optionBtn) return;
-
-  const icon = optionBtn.querySelector("svg");
-  paymentToggleIcon.innerHTML = icon ? icon.outerHTML : "";
-  paymentToggleLabel.textContent = optionBtn.querySelector(".payment-option-label")?.textContent || "";
-}
-
-function setPaymentOptionsOpen(open) {
-  paymentOptions.classList.toggle("payment-options--open", open);
-  paymentToggle.classList.toggle("payment-toggle--open", open);
-  paymentToggle.setAttribute("aria-expanded", String(open));
-}
-
-function togglePaymentOptions() {
-  setPaymentOptionsOpen(!paymentOptions.classList.contains("payment-options--open"));
-}
-
-paymentToggle.addEventListener("click", () => {
-  togglePaymentOptions();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-function setPaymentMethod(method) {
-  checkoutPaymentMethod = method;
-
-  paymentOptions.querySelectorAll(".payment-option").forEach((btn) => {
-    const isSelected = btn.dataset.method === method;
-    btn.classList.toggle("payment-option--selected", isSelected);
-    // Выбранный способ не нужно показывать в самом списке — он и так
-    // виден в свёрнутой шапке (paymentToggle), а в списке остаются
-    // только варианты, на которые можно переключиться.
-    btn.hidden = isSelected;
-  });
-  updatePaymentToggleSummary(method);
-
-  const manualConfig = MANUAL_PAYMENT_METHODS[method];
-  if (manualConfig) {
-    checkoutBuyBtn.hidden = true;
-    checkoutManualBtn.hidden = false;
-  } else {
-    checkoutManualBtn.hidden = true;
-    checkoutBuyBtn.hidden = false;
-  }
-
-  refreshAllPrices();
-
-  // Остаток ключей (Stars/xRocket) уже учтён внутри refreshAllPrices() ->
-  // refreshDurationPrices(), которая сама блокирует "Купить", если на
-  // выбранный сейчас тариф ключей нет — отдельно тут ничего не нужно.
-}
-
-// Обновляет текст кнопки ручной оплаты (NFT / RU карта). Для RU карты —
-// как и на "Купить" со звёздами — показывает зачёркнутую исходную цену и
-// цену со скидкой, если применён промокод. У NFT фиксированной цены нет
-// (оформляется перепиской с владельцем), поэтому для неё просто оставляем
-// исходный текст без цены.
-function updateManualButtonLabel() {
-  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
-  if (!manualConfig) return;
-
-  if (checkoutPaymentMethod === "card" || checkoutPaymentMethod === "uah") {
-    const duration = DURATIONS.find((d) => d.code === checkoutDuration) || DURATIONS[0];
-    const priceMap = checkoutPaymentMethod === "card" ? RU_CARD_PRICES : UAH_CARD_PRICES;
-    const unit = checkoutPaymentMethod === "card" ? "₽" : "₴";
-    const basePrice = priceMap[duration.code];
-
-    if (basePrice != null) {
-      const finalPrice = getFinalPrice(basePrice, checkoutDiscountPercent);
-      const hasDiscount = checkoutDiscountPercent > 0 && finalPrice < basePrice;
-
-      if (hasDiscount) {
-        checkoutManualOldPrice.textContent = `${basePrice} ${unit}`;
-        checkoutManualOldPrice.hidden = false;
-      } else {
-        checkoutManualOldPrice.hidden = true;
-      }
-
-      checkoutManualText.textContent = hasDiscount
-        ? `Нажмите для оплаты — ${finalPrice} ${unit}`
-        : `Нажмите для оплаты — ${basePrice} ${unit}`;
-      return;
-    }
-  }
-
-  checkoutManualOldPrice.hidden = true;
-  checkoutManualText.textContent = manualConfig.buyLabel;
-}
-
-// Единая точка обновления всех цен на экране оформления — вызывается при
-// смене тарифа, способа оплаты, а также при применении/снятии промокода,
-// чтобы скидка сразу и везде: на карточках тарифа, на кнопке "Купить" и
-// на кнопке ручной оплаты (RU карта).
-function refreshAllPrices() {
-  if (!checkoutProduct) return;
-  refreshDurationPrices();
-  updateBuyButtonLabel(checkoutBuyText, checkoutProduct, checkoutDuration);
-  updateManualButtonLabel();
-}
-
-paymentOptions.addEventListener("click", (e) => {
-  const btn = e.target.closest(".payment-option");
-  if (!btn) return;
-
-  setPaymentMethod(btn.dataset.method);
-  setPaymentOptionsOpen(false);
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// Закрыть список способов оплаты по клику вне него.
-document.addEventListener("click", (e) => {
-  if (!paymentSelect.contains(e.target)) {
-    setPaymentOptionsOpen(false);
-  }
-});
-
-function showNftModal() {
-  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
-  if (manualConfig) {
-    nftModalTitle.textContent = manualConfig.modalTitle;
-    nftModalText.textContent = manualConfig.modalText;
-  }
-
-  nftModal.hidden = false;
-
-  // Перезапускаем анимацию появления модалки без синхронного форсированного
-  // reflow (void el.offsetHeight сразу в обработчике клика блокирует поток
-  // на время пересчёта layout — на слабых устройствах это и ощущается как
-  // "тормознутость" в момент открытия). Двойной requestAnimationFrame даёт
-  // тот же гарантированный перезапуск именованной CSS-анимации, но не
-  // блокирует поток синхронным чтением layout-свойства.
-  [nftModalBackdrop, nftModal.querySelector(".nft-modal-card")].forEach((el) => {
-    if (!el) return;
-    el.style.animation = "none";
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.style.animation = "";
-      });
-    });
-  });
-}
-
-function hideNftModal() {
-  nftModal.hidden = true;
-}
-
-checkoutManualBtn.addEventListener("click", () => {
-  showNftModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-nftModalCancel.addEventListener("click", () => {
-  hideNftModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-nftModalBackdrop.addEventListener("click", () => {
-  hideNftModal();
-});
-
-nftModalWrite.addEventListener("click", () => {
-  hideNftModal();
-  // Открываем личные сообщения с нужным получателем в Telegram — у каждого
-  // способа оплаты свой username (см. ownerUsername в MANUAL_PAYMENT_METHODS):
-  // гривны идут администратору, NFT и RU карта — владельцу.
-  // tg.openTelegramLink корректно работает внутри Mini App, window.open —
-  // запасной вариант для случаев, когда приложение открыто вне Telegram.
-  const manualConfig = MANUAL_PAYMENT_METHODS[checkoutPaymentMethod];
-  const targetUsername = manualConfig?.ownerUsername || MANUAL_PAYMENT_OWNER_USERNAME;
-
-  if (tg?.openTelegramLink) {
-    tg.openTelegramLink(`https://t.me/${targetUsername}`);
-  } else {
-    window.open(`https://t.me/${targetUsername}`, "_blank");
-  }
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// Элементы, у которых есть CSS-анимация появления, навешиваемая временным
-// классом .co-anim-in (см. playCheckoutEntrance). Базовый CSS теперь всегда
-// держит их видимыми (opacity: 1) — анимация лишь временно "занижает"
-// opacity на время своего проигрывания, а не является единственным
-// способом их показать.
-const checkoutAnimatedEls = [
-  viewCheckout.querySelector(".gallery-card"),
-  ...viewCheckout.querySelectorAll(".option-group"),
-  checkoutBuyBtn,
-  checkoutManualBtn,
-].filter(Boolean);
-
-let checkoutAnimSafetyTimer = null;
-
-// Проигрывает анимацию появления карточек экрана оформления. Класс
-// .co-anim-in снимается и добавляется заново при КАЖДОМ вызове (с reflow
-// между ними), чтобы анимация гарантированно перезапускалась даже при
-// повторном открытии одного и того же экрана — переключение класса
-// надёжнее в Telegram WebView, чем просто display: none -> block.
-//
-// Плюс: если по какой-то причине анимация не доиграет и не снимет класс
-// сама (animation-fill-mode: both держит финальный кадр, но мало ли),
-// через небольшую страховочную паузу класс снимается принудительно —
-// контент в любом случае останется видимым, потому что базовый CSS для
-// этих элементов — opacity: 1, а не 0.
-function playCheckoutEntrance() {
-  checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
-
-  // Раньше здесь стоял `void viewCheckout.offsetHeight` — синхронный
-  // форсированный reflow прямо в обработчике клика по карточке товара
-  // (открытие оформления). Именно такие синхронные reflow в момент клика
-  // и ощущались как "нажатие не сработало с первого раза": браузер сначала
-  // должен был синхронно пересчитать layout всего экрана, и только потом
-  // — обработать сам переход, из-за чего реакция на тап "запаздывала".
-  // Двойной requestAnimationFrame даёт тот же гарантированный перезапуск
-  // анимации без блокировки потока.
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      checkoutAnimatedEls.forEach((el, index) => {
-        el.style.animationDelay = `${index * 70 + 60}ms`;
-        el.classList.add("co-anim-in");
-      });
-    });
-  });
-
-  clearTimeout(checkoutAnimSafetyTimer);
-  checkoutAnimSafetyTimer = setTimeout(() => {
-    checkoutAnimatedEls.forEach((el) => el.classList.remove("co-anim-in"));
-  }, 900);
-}
-
-// Показывает выбранный скриншот в главном окне галереи.
-function setGalleryMedia(src) {
-  galleryMainImg.src = src;
-}
-
-galleryThumbs.querySelectorAll(".gallery-thumb").forEach((thumb) => {
-  thumb.addEventListener("click", () => {
-    galleryThumbs
-      .querySelectorAll(".gallery-thumb")
-      .forEach((el) => el.classList.remove("gallery-thumb--active"));
-    thumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(thumb.dataset.mediaSrc);
-    tg?.HapticFeedback?.selectionChanged();
-  });
-});
-
-let checkoutProduct = null;
-let checkoutDuration = DURATIONS[0].code;
-let checkoutPromoCode = null;
-let checkoutDiscountPercent = 0;
-// Остаток ключей по каждому сроку отдельно (см. /stock_status в bot.py):
-// {"7d": true, "30d": true, "12m": false, ...}. Ключ отсутствует в
-// объекте, пока ответ сервера ещё не пришёл — тогда считаем, что ключи
-// есть, чтобы не мигать "нет в наличии" раньше времени.
-let checkoutStockByDuration = {};
-
-// Продаётся ли сейчас конкретный тариф через автоматические способы
-// оплаты (Stars/xRocket) — учитывает и статичный флаг "тариф выключен"
-// (duration.available в DURATIONS), и реальный остаток ключей именно
-// этого срока.
-function isDurationSellable(durationCode) {
-  const duration = DURATIONS.find((d) => d.code === durationCode);
-  if (!duration || duration.available === false) return false;
-  return checkoutStockByDuration[durationCode] !== false;
-}
-
-// Спрашивает у сервера остаток ключей по каждому сроку для товара. Не
-// блокирует открытие экрана оформления — вызывается уже после его показа,
-// и просто дорисовывает "нет в наличии" поверх нужных тарифов.
-async function fetchStockStatus(productId) {
-  try {
-    const response = await fetch(`/stock_status?product_id=${encodeURIComponent(productId)}`);
-    if (!response.ok) return {};
-    const data = await response.json();
-    return data.durations || {};
-  } catch (err) {
-    // Если ручка недоступна (например, старый бэкенд) — не блокируем
-    // покупку из-за сетевой ошибки, реальную проверку всё равно делает
-    // сервер при создании инвойса.
-    return {};
-  }
-}
-
-function openCheckout(product, prefillPromoCode) {
-  playCheckoutEntrance();
-
-  checkoutProduct = product;
-  checkoutDuration = DURATIONS[0].code;
-  checkoutPromoCode = null;
-  checkoutDiscountPercent = 0;
-  checkoutStockByDuration = {};
-  checkoutPromoInput.value = "";
-  checkoutPromoApply.textContent = "Применить";
-  checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-  checkoutPromoApply.disabled = false;
-  checkoutPromoInput.disabled = false;
-  setPromoStatus("");
-  setPaymentMethod("stars");
-  hideNftModal();
-
-  checkoutTitle.textContent = product.title;
-
-  // При каждом открытии оформления галерея сбрасывается на первый слайд
-  // (скриншот), а не остаётся на видео, выбранном в прошлый раз.
-  const firstThumb = galleryThumbs.querySelector(".gallery-thumb");
-  galleryThumbs
-    .querySelectorAll(".gallery-thumb")
-    .forEach((el) => el.classList.remove("gallery-thumb--active"));
-  if (firstThumb) {
-    firstThumb.classList.add("gallery-thumb--active");
-    setGalleryMedia(firstThumb.dataset.mediaSrc);
-  }
-
-  checkoutDurations.innerHTML = "";
-  DURATIONS.forEach((duration, index) => {
-    const dNode = durationTemplate.content.cloneNode(true);
-    const dBtn = dNode.querySelector(".duration-option");
-    dBtn.dataset.duration = duration.code;
-    const isAvailable = duration.available !== false;
-    dBtn.classList.toggle("duration-option--selected", index === 0);
-    dBtn.classList.toggle("duration-option--disabled", !isAvailable);
-    dBtn.disabled = !isAvailable;
-    if (!isAvailable) dBtn.setAttribute("aria-disabled", "true");
-    dNode.querySelector(".duration-option-label").textContent = duration.label;
-    applyDurationPrice(dNode.querySelector(".duration-option-price"), duration);
-    checkoutDurations.appendChild(dNode);
-  });
-
-  checkoutBuyBtn.disabled = false;
-  refreshAllPrices();
-  setCardStatus(checkoutStatus, "");
-
-  switchView("checkout");
-
-  // Проверяем реальный остаток ключей по каждому сроку уже после того, как
-  // экран показан — если на какой-то срок ключи закончились, дорисовываем
-  // "Нет в наличии" именно на нём, не трогая остальные тарифы.
-  fetchStockStatus(product.id).then((durations) => {
-    checkoutStockByDuration = durations;
-    // Пользователь мог уже уйти с этого товара, пока ответ шёл — не
-    // перекрашиваем чужой экран.
-    if (checkoutProduct === product) {
-      refreshDurationPrices();
-    }
-  });
-
-  // Если экран открыт с уже готовым промокодом (например, по кнопке
-  // "Использовать" из "Моих промокодов") — подставляем его в поле и сразу
-  // проверяем/применяем через сервер, как при обычном ручном вводе.
-  if (prefillPromoCode) {
-    checkoutPromoInput.value = prefillPromoCode;
-    applyPromoCode();
-  }
-}
-
-checkoutDurations.addEventListener("click", (e) => {
-  const btn = e.target.closest(".duration-option");
-  if (!btn || !checkoutProduct) return;
-  if (btn.disabled || btn.classList.contains("duration-option--disabled")) return;
-
-  checkoutDurations.querySelectorAll(".duration-option").forEach((b) => {
-    b.classList.toggle("duration-option--selected", b === btn);
-  });
-
-  checkoutDuration = btn.dataset.duration;
-  refreshAllPrices();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-async function applyPromoCode() {
-  const rawCode = checkoutPromoInput.value.trim();
-
-  if (!rawCode) {
-    setPromoStatus("Введите промокод", "error");
-    return;
-  }
-
-  checkoutPromoApply.disabled = true;
-  setPromoStatus("Проверяем промокод...");
-
-  let data;
-  try {
-    const response = await fetch(`/validate_promo?code=${encodeURIComponent(rawCode)}`);
-    data = await response.json();
-  } catch (err) {
-    checkoutPromoApply.disabled = false;
-    setPromoStatus("Не удалось проверить промокод, попробуй ещё раз", "error");
-    return;
-  }
-
-  checkoutPromoApply.disabled = false;
-
-  if (!data.valid) {
-    checkoutPromoCode = null;
-    checkoutDiscountPercent = 0;
-    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-    checkoutPromoApply.textContent = "Применить";
-    checkoutPromoInput.disabled = false;
-    setPromoStatus("Промокод не найден или уже использован", "error");
-    refreshAllPrices();
-    tg?.HapticFeedback?.notificationOccurred("error");
-    return;
-  }
-
-  checkoutPromoCode = rawCode;
-  checkoutDiscountPercent = data.discount_percent;
-  checkoutPromoApply.textContent = "Применено";
-  checkoutPromoApply.classList.add("promo-apply-btn--applied");
-  checkoutPromoInput.disabled = true;
-  setPromoStatus(`Скидка ${data.discount_percent}% применена`, "success");
-  refreshAllPrices();
-  tg?.HapticFeedback?.notificationOccurred("success");
-}
-
-checkoutPromoApply.addEventListener("click", () => {
-  if (!checkoutProduct) return;
-
-  // Повторный клик по уже применённому промокоду снимает его —
-  // так пользователь может вернуться к полной цене.
-  if (checkoutPromoCode) {
-    checkoutPromoCode = null;
-    checkoutDiscountPercent = 0;
-    checkoutPromoInput.disabled = false;
-    checkoutPromoInput.value = "";
-    checkoutPromoApply.textContent = "Применить";
-    checkoutPromoApply.classList.remove("promo-apply-btn--applied");
-    setPromoStatus("");
-    refreshAllPrices();
-    return;
-  }
-
-  applyPromoCode();
-});
-
-checkoutPromoInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    applyPromoCode();
-  }
-});
-
-checkoutPromoInput.addEventListener("focus", () => {
-  // Небольшая задержка нужна, чтобы клавиатура успела появиться и
-  // визуальный вьюпорт пересчитался — иначе scrollIntoView сработает
-  // по ещё не сжавшейся высоте и промахнётся.
-  setTimeout(() => {
-    checkoutPromoInput.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, 300);
-});
-
-checkoutBuyBtn.addEventListener("click", () => {
-  if (!checkoutProduct) return;
-  handleBuy(checkoutProduct, checkoutDuration, checkoutBuyBtn, checkoutBuyText, checkoutStatus);
-});
-
-checkoutBack.addEventListener("click", () => {
-  switchView("shop");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// ====== Вкладки ======
-const tabs = document.querySelectorAll(".tab");
-const views = {
-  shop: document.getElementById("view-shop"),
-  profile: document.getElementById("view-profile"),
-  checkout: viewCheckout,
-  case: document.getElementById("view-case"),
-  mypromos: document.getElementById("view-mypromos"),
-  admin: document.getElementById("view-admin"),
-};
-
-// Экраны, которые визуально являются "внутренними" для другого раздела —
-// используются, чтобы подсвечивать правильную вкладку в таббаре, когда
-// открыт не сам раздел, а вложенный в него экран.
-const VIEW_PARENT_TAB = {
-  checkout: "shop",
-  case: "shop",
-  mypromos: "profile",
-};
-
-function switchView(target) {
-  Object.entries(views).forEach(([key, el]) => {
-    el.classList.toggle("view--active", key === target);
-  });
-
-  // Подсвечиваем вкладку раздела-родителя, если открыт вложенный экран
-  // (оформление/кейс — внутри "Магазина", мои промокоды — внутри "Профиля")
-  const activeTabKey = VIEW_PARENT_TAB[target] || target;
-  tabs.forEach((t) => t.classList.toggle("tab--active", t.dataset.view === activeTabKey));
-
-  // Сбрасываем прокрутку контейнера .app в начало при каждом переключении
-  // экрана. Раньше этого не было: если пользователь успевал прокрутить
-  // страницу вниз, следующий открытый экран (например, чекаут) рендерился
-  // корректно, но оказывался вне видимой области — выглядело так, будто
-  // "интерфейс не открылся". Это и была причина бага "через раз".
-  app.scrollTop = 0;
-
-  // Гарантированно перезапускаем анимацию появления экрана: снимаем
-  // класс, форсируем reflow, навешиваем заново. Без явного reflow между
-  // remove и add браузер может "склеить" эти два изменения в одно и не
-  // перезапустить одну и ту же именованную CSS-анимацию повторно — именно
-  // это было причиной бага "первый раз открывается нормально, второй раз
-  // экран будто не появляется пару секунд" (сам экран при этом уже виден
-  // благодаря opacity: 1 по умолчанию, но без свежей анимации переход
-  // выглядел "залипшим").
-  // ВАЖНО: раньше здесь стоял `void activeView.offsetHeight;` сразу после
-  // remove/перед add — это форсированный синхронный reflow (layout
-  // thrashing) прямо в обработчике клика, да ещё сразу после записи
-  // app.scrollTop = 0 и смены классов выше. Браузер был вынужден
-  // синхронно пересчитать layout всей страницы в тот же тик — именно
-  // это ощущалось как подлагивание/рывок в момент переключения вкладок.
-  // Двойной requestAnimationFrame даёт тот же гарантированный перезапуск
-  // именованной CSS-анимации (браузер успевает "увидеть" класс без
-  // анимации на одном кадре и с анимацией на следующем), но не блокирует
-  // основной поток синхронным чтением layout-свойства.
-  const activeView = views[target];
-  if (activeView) {
-    activeView.classList.remove("view-anim-in");
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        activeView.classList.add("view-anim-in");
-      });
-    });
-  }
-}
-
-// Username поддержки — вкладка "Поддержка" в таббаре просто открывает
-// личные сообщения с этим пользователем, без переключения экрана внутри
-// мини-аппа (см. обработчик клика по вкладкам ниже).
-const SUPPORT_USERNAME = "meaninglessperson";
-
-tabs.forEach((tab) => {
-  tab.addEventListener("click", () => {
-    // Вкладка "Поддержка" — особый случай: не меняем активный экран/вкладку
-    // мини-аппа, а просто открываем личку с поддержкой и выходим из
-    // обработчика. tg.openTelegramLink корректно работает внутри Mini App,
-    // window.open — запасной вариант для случаев, когда приложение открыто
-    // вне Telegram (см. такой же паттерн у nftModalWrite выше).
-    if (tab.dataset.view === "support") {
-      tg?.HapticFeedback?.selectionChanged();
-      if (tg?.openTelegramLink) {
-        tg.openTelegramLink(`https://t.me/${SUPPORT_USERNAME}`);
-      } else {
-        window.open(`https://t.me/${SUPPORT_USERNAME}`, "_blank");
-      }
-      return;
-    }
-
-    switchView(tab.dataset.view);
-    tg?.HapticFeedback?.selectionChanged();
-    if (tab.dataset.view === "admin") {
-      loadBannedList();
-      loadAdminPromos();
-      loadAdminKeys();
-      if (isOwnerUser) loadAdminsList();
-    }
-  });
-});
-
-// ====== Прогрев скрытых вкладок и шрифтов (фикс задержки при первом входе) ======
-// Раньше "Мои промокоды", "Оформление заказа" и "Кейс" были скрыты через
-// display: none и браузер вообще не считал для них стили/раскладку и не
-// подгружал нужные жирные начертания шрифта — всё это происходило только
-// в момент реального открытия вкладки, поэтому иногда интерфейс появлялся
-// не сразу, а через пару секунд после клика. Теперь мы один раз, ещё пока
-// показан сплэш, ненадолго и невидимо (visibility: hidden, вне потока
-// документа) показываем эти экраны — браузер успевает посчитать всё
-// заранее, и реальное открытие вкладки происходит мгновенно.
-function warmUpHiddenViews() {
-  const hiddenViews = Object.entries(views)
-    .filter(([key]) => key !== "shop")
-    .map(([, el]) => el)
-    .filter(Boolean);
-
-  hiddenViews.forEach((el) => {
-    el.style.display = "block";
-    el.style.visibility = "hidden";
-    el.style.position = "absolute";
-    el.style.pointerEvents = "none";
-  });
-
-  // Форсируем расчёт layout прямо сейчас, а не откладываем его на потом
-  void document.body.offsetHeight;
-
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      hiddenViews.forEach((el) => {
-        el.style.display = "";
-        el.style.visibility = "";
-        el.style.position = "";
-        el.style.pointerEvents = "";
-      });
-    });
-  });
-}
-
-// Заранее догружаем начертания шрифта, которые реально используются в
-// заголовках/бейджах на этих вкладках — иначе первая отрисовка текста
-// такой жирности ждёт сетевой запрос к Google Fonts.
-function preloadFonts() {
-  if (!document.fonts || !document.fonts.load) return;
-  ["600 16px 'Golos Text'", "700 16px 'Golos Text'", "800 16px 'Golos Text'", "900 16px 'Golos Text'"]
-    .forEach((font) => document.fonts.load(font).catch(() => {}));
-}
-
-warmUpHiddenViews();
-preloadFonts();
-
-// ====== Профиль ======
-const profileAvatar = document.getElementById("profileAvatar");
-const profileAvatarFallback = document.getElementById("profileAvatarFallback");
-const profileAvatarLetter = document.getElementById("profileAvatarLetter");
-const profileName = document.getElementById("profileName");
-const profileUsername = document.getElementById("profileUsername");
-const adminTabBtn = document.getElementById("adminTabBtn");
-
-// Простая иконка пользователя — показывается, если у нас вообще нет
-// данных о человеке (не открыто из Telegram)
-const GUEST_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="8" r="4"/></svg>`;
-
-function showAvatarFallback(letterOrIcon) {
-  profileAvatar.hidden = true;
-  profileAvatar.removeAttribute("src");
-  profileAvatarFallback.hidden = false;
-  profileAvatarLetter.innerHTML = letterOrIcon;
-}
-
-function fillProfileFromTelegram() {
-  const user = tg?.initDataUnsafe?.user;
-
-  // Вкладка "Админ" видна владельцу и всем назначенным им админам.
-  // Проверка тут — просто чтобы не показывать её случайным людям в
-  // интерфейсе; реальные права на любое действие всё равно
-  // перепроверяются на сервере по подписанному initData.
-  checkAdminAccess();
-
-  if (!user) {
-    profileName.textContent = "Гость";
-    profileUsername.textContent = "Открой из Telegram";
-    showAvatarFallback(GUEST_ICON_SVG);
-    return;
-  }
-
-  const fullName = [user.first_name, user.last_name].filter(Boolean).join(" ");
-  profileName.textContent = fullName || "Без имени";
-  profileUsername.textContent = user.username ? "@" + user.username : "Без ника";
-
-  const firstLetter = (user.first_name || user.username || "?").charAt(0).toUpperCase();
-
-  if (user.photo_url) {
-    loadAvatarImage(user.photo_url, firstLetter);
-  } else {
-    // photo_url не всегда доступен в initData из соображений приватности —
-    // пробуем получить фото через бэкенд (бот умеет запрашивать его у Telegram)
-    loadAvatarImage(`/avatar?user_id=${user.id}`, firstLetter);
-  }
-}
-
-function loadAvatarImage(src, fallbackLetter) {
-  // Показываем букву сразу, чтобы не было пустоты, пока грузится фото
-  showAvatarFallback(fallbackLetter);
-
-  const testImg = new Image();
-  testImg.onload = () => {
-    profileAvatar.src = src;
-    profileAvatar.hidden = false;
-    profileAvatarFallback.hidden = true;
-  };
-  testImg.onerror = () => {
-    // Фото недоступно — так и оставляем аккуратный фолбэк с буквой
-    showAvatarFallback(fallbackLetter);
-  };
-  testImg.src = src;
-}
-
-// ====== Тема оформления (тёмная/светлая) ======
-// По умолчанию — тёмная (как и было). Выбор пользователя сохраняется в
-// localStorage и применяется сразу при следующем открытии, ещё до
-// прорисовки экранов, чтобы не было "мигания" тёмной темой перед светлой.
-const THEME_STORAGE_KEY = "kichiro_theme";
-const themeSwitchBtn = document.getElementById("themeSwitchBtn");
-
-function applyTheme(isLight) {
-  document.body.classList.toggle("theme-light", isLight);
-  if (themeSwitchBtn) {
-    themeSwitchBtn.setAttribute("aria-checked", String(isLight));
-  }
-}
-
-function initThemeToggle() {
-  let saved = "dark";
-  try {
-    saved = localStorage.getItem(THEME_STORAGE_KEY) || "dark";
-  } catch (err) {
-    // localStorage может быть недоступен (приватный режим и т.п.) —
-    // просто остаёмся на тёмной теме по умолчанию.
-  }
-  applyTheme(saved === "light");
-
-  themeSwitchBtn?.addEventListener("click", () => {
-    const nowLight = document.body.classList.contains("theme-light");
-    const next = !nowLight;
-    applyTheme(next);
-    tg?.HapticFeedback?.impactOccurred("light");
-    try {
-      localStorage.setItem(THEME_STORAGE_KEY, next ? "light" : "dark");
-    } catch (err) {
-      // Не страшно, если сохранить не удалось — тема просто не запомнится
-      // до следующего открытия.
-    }
-  });
-}
-
-initThemeToggle();
-
-// ====== Мои промокоды (профиль) ======
-const myPromosBtn = document.getElementById("myPromosBtn");
-const myPromosBack = document.getElementById("myPromosBack");
-const promoList = document.getElementById("promoList");
-const promoListEmpty = document.getElementById("promoListEmpty");
-const promoListActions = document.getElementById("promoListActions");
-const promoSelectModeBtn = document.getElementById("promoSelectModeBtn");
-const promoCancelSelectBtn = document.getElementById("promoCancelSelectBtn");
-const promoDeleteSelectedBtn = document.getElementById("promoDeleteSelectedBtn");
-const promoSelectedCount = document.getElementById("promoSelectedCount");
-const promoDeleteAllBtn = document.getElementById("promoDeleteAllBtn");
-
-// Определяет визуальную "редкость" промокода — та же логика, что и для
-// призов кейса, чтобы бирки выглядели одинаково по всему приложению.
-function promoRarityKeyFor(discountPercent) {
-  if (discountPercent >= 50) return "legendary";
-  if (discountPercent >= 30) return "epic";
-  if (discountPercent >= 15) return "rare";
-  if (discountPercent >= 10) return "uncommon";
-  return "common";
-}
-
-function setPromoListEmpty(text) {
-  promoListEmpty.textContent = text;
-  promoListEmpty.hidden = false;
-}
-
-// Переносит пользователя на экран оформления единственного товара с уже
-// подставленным и применённым промокодом — код при этом всё ещё проверяется
-// сервером через /validate_promo, как и при ручном вводе.
-function useMyPromoCode(code) {
-  const product = PRODUCTS[0];
-  if (!product) return;
-  openCheckout(product, code);
-}
-
-// Текущий список загруженных кодов и выбранные для удаления — хранится
-// отдельно от DOM, чтобы удобно фильтровать/пересчитывать счётчик.
-let myPromoCodes = [];
-let selectedPromoCodes = new Set();
-let isSelectingPromos = false;
-
-function updatePromoSelectionUI() {
-  const count = selectedPromoCodes.size;
-  promoSelectedCount.textContent = String(count);
-  promoDeleteSelectedBtn.disabled = count === 0;
-
-  promoList.querySelectorAll(".promo-list-item").forEach((row) => {
-    const code = row.dataset.code;
-    row.classList.toggle("promo-list-item--selected", selectedPromoCodes.has(code));
-    const checkbox = row.querySelector(".promo-item-checkbox");
-    if (checkbox) checkbox.checked = selectedPromoCodes.has(code);
-  });
-}
-
-function enterPromoSelectMode() {
-  if (!myPromoCodes.length) return;
-  isSelectingPromos = true;
-  selectedPromoCodes.clear();
-  promoList.classList.add("promo-list--selecting");
-  promoSelectModeBtn.hidden = true;
-  promoDeleteAllBtn.hidden = true;
-  promoDeleteSelectedBtn.hidden = false;
-  promoCancelSelectBtn.hidden = false;
-  updatePromoSelectionUI();
-}
-
-function exitPromoSelectMode() {
-  isSelectingPromos = false;
-  selectedPromoCodes.clear();
-  promoList.classList.remove("promo-list--selecting");
-  promoSelectModeBtn.hidden = false;
-  promoDeleteAllBtn.hidden = false;
-  promoDeleteSelectedBtn.hidden = true;
-  promoCancelSelectBtn.hidden = true;
-  updatePromoSelectionUI();
-}
-
-function togglePromoSelected(code) {
-  if (selectedPromoCodes.has(code)) {
-    selectedPromoCodes.delete(code);
-  } else {
-    selectedPromoCodes.add(code);
-  }
-  updatePromoSelectionUI();
-}
-
-function renderMyPromoCodes(codes) {
-  myPromoCodes = codes;
-  promoList.innerHTML = "";
-
-  if (!codes.length) {
-    setPromoListEmpty("Пока нет неиспользованных промокодов — открой кейс в магазине, чтобы получить скидку.");
-    promoListActions.hidden = true;
-    exitPromoSelectMode();
-    return;
-  }
-
-  promoListEmpty.hidden = true;
-  promoListActions.hidden = false;
-
-  codes.forEach((item, index) => {
-    const row = document.createElement("div");
-    row.className = "promo-list-item";
-    row.style.setProperty("--promo-index", index);
-    row.dataset.code = item.code;
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.className = "promo-list-item-checkbox promo-item-checkbox";
-    checkbox.setAttribute("aria-label", "Выбрать промокод " + item.code);
-    checkbox.addEventListener("click", (e) => e.stopPropagation());
-    checkbox.addEventListener("change", () => {
-      togglePromoSelected(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    const badge = document.createElement("span");
-    badge.className = "promo-list-item-badge promo-badge--" + promoRarityKeyFor(item.discount_percent);
-    badge.textContent = `-${item.discount_percent}%`;
-
-    const codeText = document.createElement("span");
-    codeText.className = "promo-list-item-code";
-    codeText.textContent = item.code;
-
-    const useBtn = document.createElement("button");
-    useBtn.className = "promo-list-item-use-btn";
-    useBtn.type = "button";
-    useBtn.textContent = "Использовать";
-    useBtn.addEventListener("click", () => {
-      if (isSelectingPromos) {
-        togglePromoSelected(item.code);
-        tg?.HapticFeedback?.selectionChanged();
-        return;
-      }
-      useMyPromoCode(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    row.appendChild(checkbox);
-    row.appendChild(badge);
-    row.appendChild(codeText);
-    row.appendChild(useBtn);
-
-    // В режиме выбора клик по всей строке тоже переключает чекбокс —
-    // не нужно целиться точно в маленький квадратик.
-    row.addEventListener("click", () => {
-      if (!isSelectingPromos) return;
-      checkbox.checked = !checkbox.checked;
-      togglePromoSelected(item.code);
-      tg?.HapticFeedback?.selectionChanged();
-    });
-
-    promoList.appendChild(row);
-  });
-
-  updatePromoSelectionUI();
-}
-
-async function loadMyPromoCodes() {
-  promoList.innerHTML = "";
-  promoListEmpty.hidden = true;
-  exitPromoSelectMode();
-
-  try {
-    const response = await fetch("/my_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-
-    if (!response.ok) throw new Error("bad response");
-    const data = await response.json();
-    renderMyPromoCodes(data.codes || []);
-  } catch (err) {
-    promoListActions.hidden = true;
-    setPromoListEmpty("Не удалось загрузить промокоды, попробуй ещё раз позже.");
-  }
-}
-
-// Общий помощник для запроса подтверждения — использует нативный диалог
-// Telegram Mini App, если он доступен, иначе обычный confirm() браузера.
-function confirmAction(message) {
-  return new Promise((resolve) => {
-    if (tg?.showConfirm) {
-      tg.showConfirm(message, (ok) => resolve(Boolean(ok)));
-    } else {
-      resolve(window.confirm(message));
-    }
-  });
-}
-
-async function deleteSelectedPromoCodes() {
-  const codes = Array.from(selectedPromoCodes);
-  if (!codes.length) return;
-
-  const confirmed = await confirmAction(
-    codes.length === 1
-      ? "Удалить выбранный промокод?"
-      : `Удалить выбранные промокоды (${codes.length})?`
-  );
-  if (!confirmed) return;
-
-  promoDeleteSelectedBtn.disabled = true;
-  try {
-    const response = await fetch("/delete_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "", codes }),
-    });
-    if (!response.ok) throw new Error("bad response");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    await loadMyPromoCodes();
-  } catch (err) {
-    tg?.HapticFeedback?.notificationOccurred("error");
-    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
-  }
-}
-
-async function deleteAllPromoCodes() {
-  if (!myPromoCodes.length) return;
-
-  const confirmed = await confirmAction("Удалить все промокоды без возможности восстановления?");
-  if (!confirmed) return;
-
-  promoDeleteAllBtn.disabled = true;
-  try {
-    const response = await fetch("/delete_all_promo_codes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-    if (!response.ok) throw new Error("bad response");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    await loadMyPromoCodes();
-  } catch (err) {
-    tg?.HapticFeedback?.notificationOccurred("error");
-    setPromoListEmpty("Не удалось удалить промокоды, попробуй ещё раз позже.");
-  } finally {
-    promoDeleteAllBtn.disabled = false;
-  }
-}
-
-promoSelectModeBtn.addEventListener("click", () => {
-  enterPromoSelectMode();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-promoCancelSelectBtn.addEventListener("click", () => {
-  exitPromoSelectMode();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-promoDeleteSelectedBtn.addEventListener("click", () => {
-  deleteSelectedPromoCodes();
-});
-
-promoDeleteAllBtn.addEventListener("click", () => {
-  deleteAllPromoCodes();
-});
-
-myPromosBtn.addEventListener("click", () => {
-  switchView("mypromos");
-  loadMyPromoCodes();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-myPromosBack.addEventListener("click", () => {
-  switchView("profile");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-// ====== Кейс с промокодом ======
-const caseEntryCard = document.getElementById("caseEntryCard");
-const caseBack = document.getElementById("caseBack");
-const caseStage = document.getElementById("caseStage");
-const caseOpenBtn = document.getElementById("caseOpenBtn");
-const caseResult = document.getElementById("caseResult");
-const caseResultBadge = document.getElementById("caseResultBadge");
-const caseResultCode = document.getElementById("caseResultCode");
-const caseCopyBtn = document.getElementById("caseCopyBtn");
-const caseAgainBtn = document.getElementById("caseAgainBtn");
-const caseStatus = document.getElementById("caseStatus");
-const caseReelWrap = document.getElementById("caseReelWrap");
-const caseReelTrack = document.getElementById("caseReelTrack");
-const casePrizeModal = document.getElementById("casePrizeModal");
-const casePrizeModalBackdrop = document.getElementById("casePrizeModalBackdrop");
-const casePrizeModalBadge = document.getElementById("casePrizeModalBadge");
-const casePrizeModalCode = document.getElementById("casePrizeModalCode");
-const casePrizeModalOk = document.getElementById("casePrizeModalOk");
-
-// Значения приза только для визуального наполнения рулетки декоями —
-// реальный приз всегда приходит с сервера (см. /open_case в bot.py),
-// клиент его не выбирает и не может повлиять на результат.
-const CASE_REEL_VALUES = [3, 5, 10, 15, 30, 50];
-const CASE_REEL_DECOYS_BEFORE = 28;
-const CASE_REEL_DECOYS_AFTER = 6;
-const CASE_SPIN_DURATION_MS = 3200;
-
-// Кейс снова платный — цена должна совпадать с CASE_PRICE_STARS в bot.py.
-const CASE_PRICE_STARS = 60;
-const CASE_OPEN_BTN_LABEL = `Открыть кейс — 60 ${STAR_ICON_SVG}`;
-
-// Сколько раз и с каким интервалом опрашивать /claim_case_reward после
-// того, как Telegram сообщил статус оплаты "paid" — реальный приз
-// "крутится" на сервере в момент successful_payment, который приходит
-// боту чуть позже, чем колбэк tg.openInvoice в мини-аппе.
-const CASE_CLAIM_POLL_INTERVAL_MS = 700;
-const CASE_CLAIM_POLL_ATTEMPTS = 20;
-
-function setCaseStatus(text, type = "") {
-  caseStatus.textContent = text;
-  caseStatus.className = "case-status" + (type ? " " + type : "");
-}
-
-// Определяет визуальную "редкость" приза — чисто для оформления карточки
-function rarityKeyFor(discountPercent) {
-  if (discountPercent >= 50) return "legendary";
-  if (discountPercent >= 30) return "epic";
-  if (discountPercent >= 15) return "rare";
-  if (discountPercent >= 10) return "uncommon";
-  return "common";
-}
-
-function rarityClassFor(discountPercent) {
-  return "case-result-badge--" + rarityKeyFor(discountPercent);
-}
-
-function buildReelItem(value) {
-  const el = document.createElement("div");
-  el.className = "case-reel-item case-reel-item--" + rarityKeyFor(value);
-  el.textContent = `-${value}%`;
-  return el;
-}
-
-// Полностью сбрасывает экран кейса в исходное состояние — вызывается
-// каждый раз перед переходом на этот экран, чтобы предыдущий результат
-// не "мигал" на секунду, пока не откроется свежий кейс.
-function resetCaseStage() {
-  caseReelWrap.hidden = true;
-  caseReelTrack.innerHTML = "";
-  caseReelTrack.style.transition = "none";
-  caseReelTrack.style.transform = "translateX(0px)";
-  caseResult.hidden = true;
-  caseAgainBtn.hidden = true;
-  caseStage.classList.remove("case-stage--spinning", "case-stage--opened");
-  caseOpenBtn.hidden = false;
-  caseOpenBtn.disabled = false;
-  caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-  setCaseStatus("");
-  hideCasePrizeModal();
-}
-
-// Показывает мини-меню с полученным промокодом поверх экрана кейса —
-// появляется сразу после того, как рулетка докрутилась до приза.
-function showCasePrizeModal(discountPercent, code) {
-  casePrizeModalBadge.textContent = `-${discountPercent}%`;
-  casePrizeModalBadge.className = "case-prize-modal-badge " + rarityClassFor(discountPercent);
-  casePrizeModalCode.textContent = code;
-  casePrizeModal.hidden = false;
-
-  // Форсируем перезапуск анимации появления при каждом открытии кейса —
-  // без этого при повторном открытии (второй, третий раз за сессию)
-  // анимация backdrop/карточки могла не запуститься заново в Telegram
-  // WebView (тот же приём, что и для .case-result чуть выше по коду).
-  [casePrizeModalBackdrop, casePrizeModal.querySelector(".case-prize-modal-card")].forEach((el) => {
-    if (!el) return;
-    el.style.animation = "none";
-    // Двойной rAF вместо синхронного void el.offsetHeight — см. подробное
-    // объяснение у showNftModal() выше: та же логика, тот же выигрыш.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        el.style.animation = "";
-      });
-    });
-  });
-}
-
-function hideCasePrizeModal() {
-  casePrizeModal.hidden = true;
-}
-
-casePrizeModalOk.addEventListener("click", () => {
-  hideCasePrizeModal();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-casePrizeModalBackdrop.addEventListener("click", () => {
-  hideCasePrizeModal();
-});
-
-// Строит длинную ленту призов со случайными "декоями" и настоящим призом
-// (discountPercent) где-то в середине, затем плавно прокручивает её так,
-// чтобы приз точно остановился под указателем по центру — как в открытии
-// кейсов в играх. Итог целиком определяется сервером ДО начала прокрутки,
-// анимация лишь визуализирует уже известный результат.
-function spinReelTo(discountPercent) {
-  const items = [];
-  for (let i = 0; i < CASE_REEL_DECOYS_BEFORE; i++) {
-    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
-  }
-
-  // "Почти повезло": если реально выпал небольшой приз (5% или 10%),
-  // ставим крупный приз (30% или 50%) прямо ПЕРЕД финальной позицией —
-  // рулетка визуально проезжает мимо джекпота и останавливается чуть
-  // раньше, на настоящем (небольшом) призе. Сам результат при этом никак
-  // не меняется — это чисто визуальный штрих ленты, приз всегда решён
-  // сервером заранее.
-  if (discountPercent === 3 || discountPercent === 5 || discountPercent === 10) {
-    const nearValue = Math.random() < 0.5 ? 30 : 50;
-    items[items.length - 1] = nearValue;
-  }
-
-  const targetIndex = items.length;
-  items.push(discountPercent);
-  for (let i = 0; i < CASE_REEL_DECOYS_AFTER; i++) {
-    items.push(CASE_REEL_VALUES[Math.floor(Math.random() * CASE_REEL_VALUES.length)]);
-  }
-
-  caseReelTrack.innerHTML = "";
-  caseReelTrack.style.transition = "none";
-  caseReelTrack.style.transform = "translateX(0px)";
-
-  items.forEach((value) => {
-    caseReelTrack.appendChild(buildReelItem(value));
-  });
-
-  // Reflow, чтобы браузер точно применил сброс transform перед тем, как
-  // мы запустим анимацию к новой позиции — иначе переход может "слипнуться"
-  // со сбросом и визуально не сыграть.
-  void caseReelTrack.offsetWidth;
-
-  const wrapWidth = caseReelWrap.clientWidth;
-  const targetEl = caseReelTrack.children[targetIndex];
-  const itemCenter = targetEl.offsetLeft + targetEl.offsetWidth / 2;
-  // Небольшой случайный сдвиг в пределах ширины плашки приза, чтобы
-  // рулетка не останавливалась каждый раз идеально по центру — так
-  // выглядит естественнее.
-  const jitter = (Math.random() - 0.5) * (targetEl.offsetWidth * 0.5);
-  const offset = itemCenter + jitter - wrapWidth / 2;
-
-  requestAnimationFrame(() => {
-    caseReelTrack.style.transition = `transform ${CASE_SPIN_DURATION_MS}ms cubic-bezier(0.1, 0.82, 0.13, 1)`;
-    caseReelTrack.style.transform = `translateX(${-offset}px)`;
-  });
-}
-
-// Ждёт, пока сервер "прокрутит" приз после подтверждённой оплаты
-// (см. successful_payment_handler в bot.py), опрашивая /claim_case_reward.
-// Оплата подтверждается ботом асинхронно (через successful_payment), а не
-// прямо в колбэке tg.openInvoice, поэтому сразу после статуса "paid"
-// приза может ещё не быть — отсюда и короткие повторные попытки.
-async function pollCaseReward() {
-  for (let attempt = 0; attempt < CASE_CLAIM_POLL_ATTEMPTS; attempt++) {
-    const response = await fetch("/claim_case_reward", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg ? tg.initData : "" }),
-    });
-    if (response.ok) {
-      const data = await response.json();
-      if (data.ready) return data;
-    }
-    await new Promise((resolve) => setTimeout(resolve, CASE_CLAIM_POLL_INTERVAL_MS));
-  }
-  return null;
-}
-
-async function openCase() {
-  if (!tg) {
-    setCaseStatus("Открой это приложение внутри Telegram", "error");
-    return;
-  }
-
-  caseOpenBtn.disabled = true;
-  caseOpenBtn.textContent = "Открываем оплату...";
-  setCaseStatus("");
-
-  let invoiceLink;
-  try {
-    const response = await fetch("/create_case_invoice", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ init_data: tg.initData }),
-    });
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.error === "banned" ? "Вы забанены" : "Не удалось создать оплату");
-    }
-    const data = await response.json();
-    invoiceLink = data.invoice_link;
-  } catch (err) {
-    caseOpenBtn.disabled = false;
-    caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-    setCaseStatus(err.message || "Не удалось открыть оплату, попробуй ещё раз", "error");
-    return;
-  }
-
-  tg.openInvoice(invoiceLink, async (status) => {
-    if (status !== "paid") {
-      caseOpenBtn.disabled = false;
-      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-      if (status === "cancelled") {
-        setCaseStatus("Оплата отменена");
-      } else if (status === "failed") {
-        setCaseStatus("Оплата не прошла", "error");
-      } else {
-        setCaseStatus("Статус: " + status);
-      }
-      return;
-    }
-
-    caseOpenBtn.hidden = true;
-    caseResult.hidden = true;
-    caseAgainBtn.hidden = true;
-    setCaseStatus("Оплата прошла, крутим кейс...");
-    caseStage.classList.add("case-stage--spinning");
-    caseReelWrap.hidden = false;
-
-    try {
-      const reward = await pollCaseReward();
-      if (!reward) {
-        throw new Error("Оплата прошла, но приз пока не пришёл — открой «Мои промокоды» через минуту");
-      }
-
-      spinReelTo(reward.discount_percent);
-      tg?.HapticFeedback?.selectionChanged();
-
-      // Ждём, пока рулетка реально докрутится до приза, и только потом
-      // показываем карточку результата — иначе она появится раньше, чем
-      // прокрутка остановится, и будет выглядеть рассинхронизированно.
-      await new Promise((resolve) => setTimeout(resolve, CASE_SPIN_DURATION_MS));
-
-      caseResultBadge.textContent = `-${reward.discount_percent}%`;
-      caseResultBadge.className = "case-result-badge " + rarityClassFor(reward.discount_percent);
-      caseResultCode.textContent = reward.code;
-
-      caseCopyBtn.textContent = "Скопировать";
-      caseCopyBtn.classList.remove("case-copy-btn--copied");
-
-      caseResult.hidden = false;
-      caseResult.style.animation = "none";
-      // Двойной rAF вместо синхронного reflow — тот же приём, что и выше.
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      caseResult.style.animation = "";
-      caseAgainBtn.hidden = false;
-
-      caseReelWrap.hidden = true;
-      caseStage.classList.remove("case-stage--spinning");
-      caseStage.classList.add("case-stage--opened");
-
-      setCaseStatus("Промокод действует на одну покупку — вставь его на экране оформления", "success");
-      tg?.HapticFeedback?.notificationOccurred("success");
-
-      // Мини-меню с промокодом поверх экрана — появляется сразу после того,
-      // как кнопка "Открыть кейс ещё раз" уже видна.
-      showCasePrizeModal(reward.discount_percent, reward.code);
-    } catch (err) {
-      caseReelWrap.hidden = true;
-      caseStage.classList.remove("case-stage--spinning");
-      caseOpenBtn.hidden = false;
-      setCaseStatus(err.message || "Не удалось открыть кейс, попробуй ещё раз", "error");
-      tg?.HapticFeedback?.notificationOccurred("error");
-    } finally {
-      caseOpenBtn.disabled = false;
-      caseOpenBtn.innerHTML = CASE_OPEN_BTN_LABEL;
-    }
-  });
-}
-
-caseEntryCard.addEventListener("click", () => {
-  resetCaseStage();
-  switchView("case");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseBack.addEventListener("click", () => {
-  hideCasePrizeModal();
-  switchView("shop");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseOpenBtn.addEventListener("click", () => {
-  openCase();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseAgainBtn.addEventListener("click", () => {
-  resetCaseStage();
-  openCase();
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-caseCopyBtn.addEventListener("click", async () => {
-  const code = caseResultCode.textContent;
-  try {
-    await navigator.clipboard.writeText(code);
-  } catch (err) {
-    // Clipboard API недоступен (например, нет HTTPS) — просто выделяем текст,
-    // чтобы пользователь мог скопировать вручную
-    const range = document.createRange();
-    range.selectNodeContents(caseResultCode);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
-  }
-  caseCopyBtn.textContent = "Скопировано";
-  caseCopyBtn.classList.add("case-copy-btn--copied");
-  tg?.HapticFeedback?.selectionChanged();
-});
-
-
-// ====== Админ-панель ======
-// Все запросы этого блока идут с init_data, и сервер САМ перепроверяет,
-// что это действительно ADMIN_ID (см. is_admin_init_data в bot.py) —
-// поэтому даже если кто-то откроет вкладку в обход (например, вручную
-// вызвав switchView в консоли), никакое действие всё равно не пройдёт.
-
-const adminManageBlock = document.getElementById("adminManageBlock");
-const adminAddInput = document.getElementById("adminAddInput");
-const adminAddBtn = document.getElementById("adminAddBtn");
-const adminAddStatus = document.getElementById("adminAddStatus");
-const adminAdminsList = document.getElementById("adminAdminsList");
-const adminAdminsEmpty = document.getElementById("adminAdminsEmpty");
-
-const adminBanInput = document.getElementById("adminBanInput");
-const adminBanBtn = document.getElementById("adminBanBtn");
-const adminBanStatus = document.getElementById("adminBanStatus");
-const adminBannedList = document.getElementById("adminBannedList");
-const adminBannedEmpty = document.getElementById("adminBannedEmpty");
-
-const adminPromoCode = document.getElementById("adminPromoCode");
-const adminPromoDiscount = document.getElementById("adminPromoDiscount");
-const adminPromoActivations = document.getElementById("adminPromoActivations");
-const adminPromoCreateBtn = document.getElementById("adminPromoCreateBtn");
-const adminPromoStatus = document.getElementById("adminPromoStatus");
-const adminPromoList = document.getElementById("adminPromoList");
-const adminPromoEmpty = document.getElementById("adminPromoEmpty");
-
-const adminUserPromoInput = document.getElementById("adminUserPromoInput");
-const adminUserPromoBtn = document.getElementById("adminUserPromoBtn");
-const adminUserPromoStatus = document.getElementById("adminUserPromoStatus");
-const adminUserPromoList = document.getElementById("adminUserPromoList");
-const adminUserPromoEmpty = document.getElementById("adminUserPromoEmpty");
-
-const adminKeyInput = document.getElementById("adminKeyInput");
-const adminKeyAddBtn = document.getElementById("adminKeyAddBtn");
-const adminKeyStatus = document.getElementById("adminKeyStatus");
-const adminKeyDurationToggle = document.getElementById("adminKeyDurationToggle");
-const adminKeysList = document.getElementById("adminKeysList");
-const adminKeysEmpty = document.getElementById("adminKeysEmpty");
-const adminStockAutoBtn = document.getElementById("adminStockAutoBtn");
-const adminStockYesBtn = document.getElementById("adminStockYesBtn");
-const adminStockNoBtn = document.getElementById("adminStockNoBtn");
-const adminStockStatus = document.getElementById("adminStockStatus");
-const adminKeysClearIssuedBtn = document.getElementById("adminKeysClearIssuedBtn");
-const adminKeysClearIssuedStatus = document.getElementById("adminKeysClearIssuedStatus");
-// Товар, которым управляет блок "Ключи доступа" в админке — единственный
-// товар в магазине, см. PRODUCTS в bot.py.
-const ADMIN_KEYS_PRODUCT_ID = "dystopia";
-// Срок, который будет присвоен следующему добавляемому ключу. Список
-// вариантов подтягивается с бэкенда (DURATIONS), поэтому если тарифы
-// поменяются — кнопки обновятся сами, без правки фронтенда.
-let adminKeyDurationCode = "7d";
-
-// Иконка "крестик" для кнопок удаления/разбана в списках
-const REMOVE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
-
-function setAdminStatus(el, text, type = "") {
-  el.textContent = text;
-  el.className = "promo-status" + (type ? " " + type : "");
-}
-
-async function adminPost(url, payload) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ init_data: tg ? tg.initData : "", ...payload }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new Error(data.error || "Ошибка запроса");
-  }
-  return data;
-}
-
-// --- Доступ к админ-панели ---
-
-// true, если текущий пользователь — владелец (ADMIN_ID). Только владелец
-// видит и может пользоваться блоком "Назначить админа" ниже. Обычные
-// назначенные админы видят остальную панель (бан, промокоды), но не
-// управление списком админов — это решает сервер по initData.
-let isOwnerUser = false;
-
-async function checkAdminAccess() {
-  try {
-    const data = await adminPost("/admin/whoami", {});
-    adminTabBtn.hidden = !data.is_admin;
-    isOwnerUser = !!data.is_owner;
-    adminManageBlock.hidden = !isOwnerUser;
-    if (isOwnerUser) loadAdminsList();
-  } catch (err) {
-    // Открыто не из Telegram или initData ещё не готова — просто не
-    // показываем вкладку "Админ".
-    adminTabBtn.hidden = true;
-  }
-}
-
-// --- Назначение/снятие админов (только владелец) ---
-
-async function loadAdminsList() {
-  try {
-    const data = await adminPost("/admin/admins/list", {});
-    renderAdminsList(data.admins || []);
-  } catch (err) {
-    // см. комментарий в loadBannedList
-  }
-}
-
-function renderAdminsList(items) {
-  adminAdminsList.innerHTML = "";
-  adminAdminsEmpty.hidden = items.length > 0;
-
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "admin-list-item";
-
-    const info = document.createElement("div");
-    info.className = "admin-list-item-info";
-
-    const title = document.createElement("div");
-    title.className = "admin-list-item-title";
-    title.textContent = item.username ? "@" + item.username : `id ${item.user_id}`;
-
-    const sub = document.createElement("div");
-    sub.className = "admin-list-item-sub";
-    sub.textContent = item.user_id && item.username ? `id ${item.user_id}` : "админ";
-
-    info.appendChild(title);
-    info.appendChild(sub);
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "admin-list-item-remove";
-    removeBtn.innerHTML = REMOVE_ICON_SVG;
-    removeBtn.addEventListener("click", () => removeAdmin(item.key));
-
-    row.appendChild(info);
-    row.appendChild(removeBtn);
-    adminAdminsList.appendChild(row);
-  });
-}
-
-async function removeAdmin(key) {
-  try {
-    await adminPost("/admin/admins/remove", { key });
-    tg?.HapticFeedback?.selectionChanged();
-    loadAdminsList();
-  } catch (err) {
-    setAdminStatus(adminAddStatus, "Не удалось снять админа, попробуй ещё раз", "error");
-  }
-}
-
-adminAddBtn.addEventListener("click", async () => {
-  const target = adminAddInput.value.trim();
-  if (!target) {
-    setAdminStatus(adminAddStatus, "Введи username или id", "error");
-    return;
-  }
-
-  adminAddBtn.disabled = true;
-  try {
-    await adminPost("/admin/admins/add", { target });
-    adminAddInput.value = "";
-    setAdminStatus(adminAddStatus, "Админ назначен", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    loadAdminsList();
-  } catch (err) {
-    let message = "Не удалось назначить: " + err.message;
-    if (err.message === "already admin") message = "Этот пользователь уже назначен админом";
-    if (err.message === "already owner") message = "Это и так владелец";
-    setAdminStatus(adminAddStatus, message, "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    adminAddBtn.disabled = false;
-  }
-});
-
-// --- Бан пользователей ---
-
-async function loadBannedList() {
-  try {
-    const data = await adminPost("/admin/banned_list", {});
-    renderBannedList(data.banned || []);
-  } catch (err) {
-    // Тихо игнорируем — например, если вкладка на секунду открылась не у
-    // админа (initData ещё не готова при самом первом рендере).
-  }
-}
-
-function renderBannedList(items) {
-  adminBannedList.innerHTML = "";
-  adminBannedEmpty.hidden = items.length > 0;
-
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "admin-list-item";
-
-    const info = document.createElement("div");
-    info.className = "admin-list-item-info";
-
-    const title = document.createElement("div");
-    title.className = "admin-list-item-title";
-    title.textContent = item.username ? "@" + item.username : `id ${item.user_id}`;
-
-    const sub = document.createElement("div");
-    sub.className = "admin-list-item-sub";
-    sub.textContent = item.user_id && item.username ? `id ${item.user_id}` : "забанен";
-
-    info.appendChild(title);
-    info.appendChild(sub);
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "admin-list-item-remove";
-    removeBtn.innerHTML = REMOVE_ICON_SVG;
-    removeBtn.addEventListener("click", () => unbanUser(item.key));
-
-    row.appendChild(info);
-    row.appendChild(removeBtn);
-    adminBannedList.appendChild(row);
-  });
-}
-
-async function unbanUser(key) {
-  try {
-    await adminPost("/admin/unban", { key });
-    tg?.HapticFeedback?.selectionChanged();
-    loadBannedList();
-  } catch (err) {
-    setAdminStatus(adminBanStatus, "Не удалось разбанить, попробуй ещё раз", "error");
-  }
-}
-
-adminBanBtn.addEventListener("click", async () => {
-  const target = adminBanInput.value.trim();
-  if (!target) {
-    setAdminStatus(adminBanStatus, "Введи username или id", "error");
-    return;
-  }
-
-  adminBanBtn.disabled = true;
-  try {
-    await adminPost("/admin/ban", { target });
-    adminBanInput.value = "";
-    setAdminStatus(adminBanStatus, "Пользователь забанен", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    loadBannedList();
-  } catch (err) {
-    const message = err.message === "already banned"
-      ? "Этот пользователь уже забанен"
-      : "Не удалось забанить: " + err.message;
-    setAdminStatus(adminBanStatus, message, "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    adminBanBtn.disabled = false;
-  }
-});
-
-// --- Промокоды ---
-
-async function loadAdminPromos() {
-  try {
-    const data = await adminPost("/admin/promo/list", {});
-    renderAdminPromos(data.promos || []);
-  } catch (err) {
-    // см. комментарий в loadBannedList
-  }
-}
-
-function renderAdminPromos(items) {
-  adminPromoList.innerHTML = "";
-  adminPromoEmpty.hidden = items.length > 0;
-
-  items.forEach((promo) => {
-    const row = document.createElement("div");
-    row.className = "admin-list-item";
-
-    const info = document.createElement("div");
-    info.className = "admin-list-item-info";
-
-    const title = document.createElement("div");
-    title.className = "admin-list-item-title";
-    title.textContent = promo.code;
-
-    const sub = document.createElement("div");
-    sub.className = "admin-list-item-sub";
-    sub.textContent = `Активировано ${promo.activations} из ${promo.max_activations}`;
-
-    info.appendChild(title);
-    info.appendChild(sub);
-
-    const badge = document.createElement("span");
-    badge.className = "admin-list-item-badge";
-    badge.textContent = `-${promo.discount_percent}%`;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "admin-list-item-remove";
-    removeBtn.innerHTML = REMOVE_ICON_SVG;
-    removeBtn.addEventListener("click", () => deleteAdminPromo(promo.code));
-
-    row.appendChild(info);
-    row.appendChild(badge);
-    row.appendChild(removeBtn);
-    adminPromoList.appendChild(row);
-  });
-}
-
-async function deleteAdminPromo(code) {
-  try {
-    await adminPost("/admin/promo/delete", { code });
-    tg?.HapticFeedback?.selectionChanged();
-    loadAdminPromos();
-  } catch (err) {
-    setAdminStatus(adminPromoStatus, "Не удалось удалить промокод", "error");
-  }
-}
-
-adminPromoCreateBtn.addEventListener("click", async () => {
-  const code = adminPromoCode.value.trim();
-  const discountPercent = parseInt(adminPromoDiscount.value, 10);
-  const maxActivations = parseInt(adminPromoActivations.value, 10);
-
-  if (!code) {
-    setAdminStatus(adminPromoStatus, "Введи название промокода", "error");
-    return;
-  }
-  if (!Number.isFinite(discountPercent) || discountPercent < 1 || discountPercent > 100) {
-    setAdminStatus(adminPromoStatus, "Скидка должна быть от 1 до 100%", "error");
-    return;
-  }
-  if (!Number.isFinite(maxActivations) || maxActivations < 1) {
-    setAdminStatus(adminPromoStatus, "Укажи количество активаций (минимум 1)", "error");
-    return;
-  }
-
-  adminPromoCreateBtn.disabled = true;
-  try {
-    await adminPost("/admin/promo/create", {
-      code,
-      discount_percent: discountPercent,
-      max_activations: maxActivations,
-    });
-    adminPromoCode.value = "";
-    adminPromoDiscount.value = "";
-    adminPromoActivations.value = "";
-    setAdminStatus(adminPromoStatus, "Промокод создан", "success");
-    tg?.HapticFeedback?.notificationOccurred("success");
-    loadAdminPromos();
-  } catch (err) {
-    setAdminStatus(adminPromoStatus, "Не удалось создать: " + err.message, "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    adminPromoCreateBtn.disabled = false;
-  }
-});
-
-// --- Ключи доступа (добавление + ручной переключатель "в наличии") ---
-
-function renderStockToggle(override) {
-  // override: true / false / null (null = автоматический подсчёт)
-  adminStockAutoBtn.classList.toggle("admin-segmented-btn--active", override === null || override === undefined);
-  adminStockYesBtn.classList.toggle("admin-segmented-btn--active", override === true);
-  adminStockNoBtn.classList.toggle("admin-segmented-btn--active", override === false);
-}
-
-// Строит кнопки выбора срока нового ключа по списку тарифов с бэкенда
-// (durations: [{code, label}, ...]) — если список тарифов поменяется на
-// сервере, кнопки подстроятся сами при следующей загрузке.
-function renderKeyDurationToggle(durations) {
-  const list = durations && durations.length ? durations : [{ code: "7d", label: "7 дней" }];
-
-  // Если текущий выбранный срок пропал из списка (например, тариф убрали) —
-  // переключаемся на первый доступный.
-  if (!list.some((d) => d.code === adminKeyDurationCode)) {
-    adminKeyDurationCode = list[0].code;
-  }
-
-  adminKeyDurationToggle.innerHTML = "";
-  list.forEach((d) => {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "admin-segmented-btn";
-    // Если по этому сроку есть покупатели, которые оплатили, но ещё не
-    // получили ключ (закончились в момент оплаты), показываем это прямо
-    // на кнопке — чтобы было видно, что добавленный ключ сейчас же уйдёт
-    // одному из них, а не просто ляжет "в наличие".
-    const pendingCount = d.pending_count || 0;
-    btn.textContent = pendingCount > 0
-      ? `${d.label || d.code} (ждут: ${pendingCount})`
-      : (d.label || d.code);
-    btn.classList.toggle("admin-segmented-btn--active", d.code === adminKeyDurationCode);
-    btn.addEventListener("click", () => {
-      adminKeyDurationCode = d.code;
-      renderKeyDurationToggle(list);
-    });
-    adminKeyDurationToggle.appendChild(btn);
-  });
-}
-
-async function loadAdminKeys() {
-  try {
-    const data = await adminPost("/admin/keys/list", { product_id: ADMIN_KEYS_PRODUCT_ID });
-    renderKeyDurationToggle(data.durations || []);
-    renderAdminKeys(data.keys || []);
-    renderStockToggle(data.stock_override === undefined ? null : data.stock_override);
-  } catch (err) {
-    // см. комментарий в loadBannedList
-  }
-}
-
-function renderAdminKeys(items) {
-  adminKeysList.innerHTML = "";
-  adminKeysEmpty.hidden = items.length > 0;
-
-  items.forEach((item) => {
-    const row = document.createElement("div");
-    row.className = "admin-list-item";
-
-    const info = document.createElement("div");
-    info.className = "admin-list-item-info";
-
-    const title = document.createElement("div");
-    title.className = "admin-list-item-title";
-    title.textContent = item.key;
-
-    const durationLine = document.createElement("div");
-    durationLine.className = "admin-list-item-sub";
-    durationLine.textContent = item.duration_label || item.duration_code || "";
-
-    info.appendChild(title);
-    info.appendChild(durationLine);
-
-    const badge = document.createElement("span");
-    badge.className = "admin-list-item-badge";
-    badge.textContent = item.issued ? "Выдан" : "Свободен";
-
-    row.appendChild(info);
-    row.appendChild(badge);
-
-    // Удалить можно только ключи, добавленные через саму панель
-    // (EXTRA_ACCESS_KEYS) и ещё не выданные покупателю — ключи, зашитые в
-    // код, и уже выданные ключи не удаляются.
-    if (item.deletable) {
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "admin-list-item-remove";
-      removeBtn.innerHTML = REMOVE_ICON_SVG;
-      removeBtn.addEventListener("click", () => deleteAdminKey(item.key));
-      row.appendChild(removeBtn);
-    }
-
-    adminKeysList.appendChild(row);
-  });
-}
-
-async function deleteAdminKey(key) {
-  try {
-    await adminPost("/admin/keys/delete", { key });
-    tg?.HapticFeedback?.selectionChanged();
-    loadAdminKeys();
-  } catch (err) {
-    setAdminStatus(adminKeyStatus, "Не удалось удалить: " + err.message, "error");
-  }
-}
-
-adminKeyAddBtn.addEventListener("click", async () => {
-  const key = adminKeyInput.value.trim();
-  if (!key) {
-    setAdminStatus(adminKeyStatus, "Введи ключ", "error");
-    return;
-  }
-
-  adminKeyAddBtn.disabled = true;
-  try {
-    const result = await adminPost("/admin/keys/add", {
-      key,
-      duration_code: adminKeyDurationCode,
-      product_id: ADMIN_KEYS_PRODUCT_ID,
-    });
-    adminKeyInput.value = "";
-    // Если по этому сроку кто-то ждал ключ (оплатил раньше, но ключей не
-    // хватило) — бэкенд сам, автоматически, только что выдал ему этот
-    // (или один из свободных) ключ. Явно показываем это в статусе, чтобы
-    // не казалось, что "ключ добавлен, но не выдаётся".
-    const autoCount = result?.auto_fulfilled_count || 0;
-    setAdminStatus(
-      adminKeyStatus,
-      autoCount > 0
-        ? `Ключ добавлен и сразу выдан ${autoCount} ожидавшему покупателю`
-        : "Ключ добавлен",
-      "success"
-    );
-    tg?.HapticFeedback?.notificationOccurred("success");
-    loadAdminKeys();
-  } catch (err) {
-    setAdminStatus(adminKeyStatus, "Не удалось добавить: " + err.message, "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    adminKeyAddBtn.disabled = false;
-  }
-});
-
-async function setStockOverride(available) {
-  try {
-    await adminPost("/admin/keys/set_stock", { product_id: ADMIN_KEYS_PRODUCT_ID, available });
-    renderStockToggle(available === undefined ? null : available);
-    setAdminStatus(adminStockStatus, "Сохранено", "success");
-    tg?.HapticFeedback?.selectionChanged();
-  } catch (err) {
-    setAdminStatus(adminStockStatus, "Не удалось сохранить: " + err.message, "error");
-  }
-}
-
-adminStockAutoBtn.addEventListener("click", () => setStockOverride(null));
-adminStockYesBtn.addEventListener("click", () => setStockOverride(true));
-adminStockNoBtn.addEventListener("click", () => setStockOverride(false));
-
-// Чистит записи о выдаче ключей, которых больше нет в текущем списке
-// (например, старые ключи, удалённые из кода) — на статус наличия и на
-// уже активные ключи это не влияет, просто убирает "хвосты" из истории.
-adminKeysClearIssuedBtn.addEventListener("click", async () => {
-  const confirmed = await confirmAction(
-    "Очистить старые записи о выдаче? Это уберёт только записи об уже удалённых ключах — активные ключи и их статус \"выдан\" не тронет."
-  );
-  if (!confirmed) return;
-
-  adminKeysClearIssuedBtn.disabled = true;
-  try {
-    const data = await adminPost("/admin/keys/clear_issued", {});
-    const count = data.cleared_count || 0;
-    setAdminStatus(
-      adminKeysClearIssuedStatus,
-      count > 0 ? `Очищено записей: ${count}` : "Нечего было чистить — всё чисто",
-      "success"
-    );
-    tg?.HapticFeedback?.notificationOccurred("success");
-    loadAdminKeys();
-  } catch (err) {
-    setAdminStatus(adminKeysClearIssuedStatus, "Не удалось очистить: " + err.message, "error");
-    tg?.HapticFeedback?.notificationOccurred("error");
-  } finally {
-    adminKeysClearIssuedBtn.disabled = false;
-  }
-});
-
-// --- Промокоды конкретного пользователя (поиск по username/id, любые) ---
-
-// Запоминаем, чьи промокоды сейчас показаны в списке, — нужно только
-// чтобы после удаления кода перезапросить список того же пользователя,
-// а не заставлять админа вводить его снова.
-let currentUserPromoTarget = "";
-
-function renderUserPromoList(items) {
-  adminUserPromoList.innerHTML = "";
-  adminUserPromoEmpty.hidden = items.length > 0;
-
-  items.forEach((promo) => {
-    const row = document.createElement("div");
-    row.className = "admin-list-item";
-
-    const info = document.createElement("div");
-    info.className = "admin-list-item-info";
-
-    const title = document.createElement("div");
-    title.className = "admin-list-item-title";
-    title.textContent = promo.code;
-
-    const sub = document.createElement("div");
-    sub.className = "admin-list-item-sub";
-    sub.textContent = promo.used ? "Уже использован" : "Не использован";
-
-    info.appendChild(title);
-    info.appendChild(sub);
-
-    const badge = document.createElement("span");
-    badge.className = "admin-list-item-badge";
-    badge.textContent = `-${promo.discount_percent}%`;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "admin-list-item-remove";
-    removeBtn.innerHTML = REMOVE_ICON_SVG;
-    removeBtn.addEventListener("click", () => deleteUserPromo(promo.code));
-
-    row.appendChild(info);
-    row.appendChild(badge);
-    row.appendChild(removeBtn);
-    adminUserPromoList.appendChild(row);
-  });
-}
-
-async function searchUserPromoCodes(target) {
-  adminUserPromoBtn.disabled = true;
-  try {
-    const data = await adminPost("/admin/user_promo_codes", { target });
-    currentUserPromoTarget = target;
-    const who = data.username ? "@" + data.username : `id ${data.user_id}`;
-    if (data.codes.length === 0) {
-      setAdminStatus(adminUserPromoStatus, `У пользователя ${who} пока нет промокодов`, "success");
-    } else {
-      setAdminStatus(adminUserPromoStatus, `Промокоды пользователя ${who}:`, "success");
-    }
-    renderUserPromoList(data.codes || []);
-  } catch (err) {
-    currentUserPromoTarget = "";
-    const message = err.message === "user_not_found"
-      ? "Этот пользователь ни разу не открывал мини-апп — его нельзя найти по username"
-      : "Не удалось найти пользователя: " + err.message;
-    setAdminStatus(adminUserPromoStatus, message, "error");
-    renderUserPromoList([]);
-  } finally {
-    adminUserPromoBtn.disabled = false;
-  }
-}
-
-async function deleteUserPromo(code) {
-  try {
-    await adminPost("/admin/user_promo_delete", { code });
-    tg?.HapticFeedback?.selectionChanged();
-    if (currentUserPromoTarget) searchUserPromoCodes(currentUserPromoTarget);
-  } catch (err) {
-    setAdminStatus(adminUserPromoStatus, "Не удалось удалить промокод", "error");
-  }
-}
-
-adminUserPromoBtn.addEventListener("click", () => {
-  const target = adminUserPromoInput.value.trim();
-  if (!target) {
-    setAdminStatus(adminUserPromoStatus, "Введи username или id пользователя", "error");
-    return;
-  }
-  searchUserPromoCodes(target);
-});
-
-// ====== Инициализация ======
-// Рендерим карточки и профиль только когда сплэш реально скрывается —
-// так плавное появление карточек видно пользователю, а не "съедается"
-// временем, пока крутится экран загрузки.
-let appInitialized = false;
-
-function initApp() {
-  if (appInitialized) return;
-  appInitialized = true;
-  renderProducts();
-  fillProfileFromTelegram();
-  // Экран "Магазин" изначально активен прямо в HTML (без вызова
-  // switchView), поэтому ему тоже нужно явно навесить класс анимации
-  // появления — иначе он останется без неё при самом первом запуске.
-  switchView("shop");
 }
