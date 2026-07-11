@@ -27,7 +27,7 @@ const PRODUCTS = [
 // на свои под каждый тариф. available: false — тариф "нет в наличии":
 // показывается в списке, но красным цветом и недоступен для выбора/покупки.
 const DURATIONS = [
-  { code: "7d", label: "7 дней", price: 300 },
+  { code: "7d", label: "7 дней", price: 1 },
   { code: "30d", label: "30 дней", price: 500, available: false },
   { code: "12m", label: "12 месяцев", price: 4000, available: false },
 ];
@@ -841,20 +841,10 @@ function setPaymentMethod(method) {
   refreshAllPrices();
 
   // Остаток ключей (ACCESS_KEYS) касается только Stars/xRocket — при
-  // переключении на них показываем "нет в наличии", если ключи кончились;
-  // при переключении на ручные способы (NFT/RU-карта/гривна) — не мешаем,
-  // они не зависят от склада.
+  // переключении на них кнопка "Купить" блокируется, если ключи
+  // кончились; ручные способы (NFT/RU-карта/гривна) не зависят от склада.
   const isAutoMethod = method === "stars" || method === "xrocket";
   checkoutBuyBtn.disabled = isAutoMethod && !checkoutStockAvailable;
-  if (isAutoMethod && !checkoutStockAvailable) {
-    setCardStatus(
-      checkoutStatus,
-      "Ключи закончились для Stars и xRocket — доступны NFT, RU-карта и гривна (оформляются вручную)",
-      "error"
-    );
-  } else {
-    setCardStatus(checkoutStatus, "");
-  }
 }
 
 // Обновляет текст кнопки ручной оплаты (NFT / RU карта). Для RU карты —
@@ -1086,15 +1076,6 @@ async function checkStockStatus(productId) {
 function applyStockUnavailableUI() {
   refreshDurationPrices();
   checkoutBuyBtn.disabled = true;
-
-  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
-  if (isAutoMethod) {
-    setCardStatus(
-      checkoutStatus,
-      "Ключи закончились для Stars и xRocket — доступны NFT, RU-карта и гривна (оформляются вручную)",
-      "error"
-    );
-  }
 }
 
 function openCheckout(product, prefillPromoCode) {
@@ -1366,6 +1347,7 @@ tabs.forEach((tab) => {
     if (tab.dataset.view === "admin") {
       loadBannedList();
       loadAdminPromos();
+      loadAdminKeys();
       if (isOwnerUser) loadAdminsList();
     }
   });
@@ -2132,6 +2114,19 @@ const adminUserPromoStatus = document.getElementById("adminUserPromoStatus");
 const adminUserPromoList = document.getElementById("adminUserPromoList");
 const adminUserPromoEmpty = document.getElementById("adminUserPromoEmpty");
 
+const adminKeyInput = document.getElementById("adminKeyInput");
+const adminKeyAddBtn = document.getElementById("adminKeyAddBtn");
+const adminKeyStatus = document.getElementById("adminKeyStatus");
+const adminKeysList = document.getElementById("adminKeysList");
+const adminKeysEmpty = document.getElementById("adminKeysEmpty");
+const adminStockAutoBtn = document.getElementById("adminStockAutoBtn");
+const adminStockYesBtn = document.getElementById("adminStockYesBtn");
+const adminStockNoBtn = document.getElementById("adminStockNoBtn");
+const adminStockStatus = document.getElementById("adminStockStatus");
+// Товар, которым управляет блок "Ключи доступа" в админке — единственный
+// товар в магазине, см. PRODUCTS в bot.py.
+const ADMIN_KEYS_PRODUCT_ID = "dystopia";
+
 // Иконка "крестик" для кнопок удаления/разбана в списках
 const REMOVE_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="M6 6l12 12"/></svg>`;
 
@@ -2434,6 +2429,112 @@ adminPromoCreateBtn.addEventListener("click", async () => {
     adminPromoCreateBtn.disabled = false;
   }
 });
+
+// --- Ключи доступа (добавление + ручной переключатель "в наличии") ---
+
+function renderStockToggle(override) {
+  // override: true / false / null (null = автоматический подсчёт)
+  adminStockAutoBtn.classList.toggle("promo-apply-btn--applied", override === null || override === undefined);
+  adminStockYesBtn.classList.toggle("promo-apply-btn--applied", override === true);
+  adminStockNoBtn.classList.toggle("promo-apply-btn--applied", override === false);
+}
+
+async function loadAdminKeys() {
+  try {
+    const data = await adminPost("/admin/keys/list", { product_id: ADMIN_KEYS_PRODUCT_ID });
+    renderAdminKeys(data.keys || []);
+    renderStockToggle(data.stock_override === undefined ? null : data.stock_override);
+  } catch (err) {
+    // см. комментарий в loadBannedList
+  }
+}
+
+function renderAdminKeys(items) {
+  adminKeysList.innerHTML = "";
+  adminKeysEmpty.hidden = items.length > 0;
+
+  items.forEach((item) => {
+    const row = document.createElement("div");
+    row.className = "admin-list-item";
+
+    const info = document.createElement("div");
+    info.className = "admin-list-item-info";
+
+    const title = document.createElement("div");
+    title.className = "admin-list-item-title";
+    title.textContent = item.key;
+
+    info.appendChild(title);
+
+    const badge = document.createElement("span");
+    badge.className = "admin-list-item-badge";
+    badge.textContent = item.issued ? "Выдан" : "Свободен";
+
+    row.appendChild(info);
+    row.appendChild(badge);
+
+    // Удалить можно только ключи, добавленные через саму панель
+    // (EXTRA_ACCESS_KEYS) и ещё не выданные покупателю — ключи, зашитые в
+    // код, и уже выданные ключи не удаляются.
+    if (item.deletable) {
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "admin-list-item-remove";
+      removeBtn.innerHTML = REMOVE_ICON_SVG;
+      removeBtn.addEventListener("click", () => deleteAdminKey(item.key));
+      row.appendChild(removeBtn);
+    }
+
+    adminKeysList.appendChild(row);
+  });
+}
+
+async function deleteAdminKey(key) {
+  try {
+    await adminPost("/admin/keys/delete", { key });
+    tg?.HapticFeedback?.selectionChanged();
+    loadAdminKeys();
+  } catch (err) {
+    setAdminStatus(adminKeyStatus, "Не удалось удалить: " + err.message, "error");
+  }
+}
+
+adminKeyAddBtn.addEventListener("click", async () => {
+  const key = adminKeyInput.value.trim();
+  if (!key) {
+    setAdminStatus(adminKeyStatus, "Введи ключ", "error");
+    return;
+  }
+
+  adminKeyAddBtn.disabled = true;
+  try {
+    await adminPost("/admin/keys/add", { key });
+    adminKeyInput.value = "";
+    setAdminStatus(adminKeyStatus, "Ключ добавлен", "success");
+    tg?.HapticFeedback?.notificationOccurred("success");
+    loadAdminKeys();
+  } catch (err) {
+    setAdminStatus(adminKeyStatus, "Не удалось добавить: " + err.message, "error");
+    tg?.HapticFeedback?.notificationOccurred("error");
+  } finally {
+    adminKeyAddBtn.disabled = false;
+  }
+});
+
+async function setStockOverride(available) {
+  try {
+    await adminPost("/admin/keys/set_stock", { product_id: ADMIN_KEYS_PRODUCT_ID, available });
+    renderStockToggle(available === undefined ? null : available);
+    setAdminStatus(adminStockStatus, "Сохранено", "success");
+    tg?.HapticFeedback?.selectionChanged();
+  } catch (err) {
+    setAdminStatus(adminStockStatus, "Не удалось сохранить: " + err.message, "error");
+  }
+}
+
+adminStockAutoBtn.addEventListener("click", () => setStockOverride(null));
+adminStockYesBtn.addEventListener("click", () => setStockOverride(true));
+adminStockNoBtn.addEventListener("click", () => setStockOverride(false));
 
 // --- Промокоды конкретного пользователя (поиск по username/id, любые) ---
 
