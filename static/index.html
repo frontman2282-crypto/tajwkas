@@ -258,7 +258,7 @@
         <span class="option-group-label">Ключи доступа</span>
 
         <span class="option-group-label" id="adminKeyDurationLabel">Срок нового ключа</span>
-        <div class="admin-form-row" id="adminKeyDurationToggle"></div>
+        <div class="admin-segmented" id="adminKeyDurationToggle"></div>
 
         <div class="promo-row">
           <div class="promo-input-wrap">
@@ -270,14 +270,17 @@
         <p class="promo-status" id="adminKeyStatus"></p>
 
         <span class="option-group-label" id="adminStockLabel">В наличии</span>
-        <div class="admin-form-row" id="adminStockToggle">
-          <button class="promo-apply-btn" id="adminStockAutoBtn" type="button">Авто</button>
-          <button class="promo-apply-btn" id="adminStockYesBtn" type="button">Да</button>
-          <button class="promo-apply-btn" id="adminStockNoBtn" type="button">Нет</button>
+        <div class="admin-segmented" id="adminStockToggle">
+          <button class="admin-segmented-btn" id="adminStockAutoBtn" type="button">Авто</button>
+          <button class="admin-segmented-btn admin-segmented-btn--positive" id="adminStockYesBtn" type="button">Да</button>
+          <button class="admin-segmented-btn admin-segmented-btn--negative" id="adminStockNoBtn" type="button">Нет</button>
         </div>
         <p class="promo-status" id="adminStockStatus"></p>
 
-        <button class="promo-apply-btn" id="adminKeysClearIssuedBtn" type="button">Очистить старые записи о выдаче</button>
+        <button class="admin-ghost-btn" id="adminKeysClearIssuedBtn" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          <span>Очистить старые записи о выдаче</span>
+        </button>
         <p class="promo-status" id="adminKeysClearIssuedStatus"></p>
 
         <div class="admin-list" id="adminKeysList"></div>
