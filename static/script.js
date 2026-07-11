@@ -411,13 +411,15 @@ function applyDurationPrice(priceEl, duration) {
     return;
   }
 
-  // Реальный остаток ключей на складе (ACCESS_KEYS) касается только
-  // автоматических способов оплаты (Stars и xRocket) — они выдают ключ
-  // сразу и без участия человека. NFT, RU-карта и гривна оформляются
-  // вручную владельцем/администратором в переписке, поэтому для них цена
-  // показывается как обычно, даже если ключи закончились.
+  // Реальный остаток ключей на складе (ACCESS_KEYS/EXTRA_ACCESS_KEYS)
+  // касается только автоматических способов оплаты (Stars и xRocket) —
+  // они выдают ключ сразу и без участия человека. NFT, RU-карта и гривна
+  // оформляются вручную владельцем/администратором в переписке, поэтому
+  // для них цена показывается как обычно, даже если ключи закончились.
+  // Проверяется остаток именно этого срока — наличие ключей на 30 дней не
+  // должно "маскировать" отсутствие ключей на 12 месяцев, и наоборот.
   const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
-  if (isAutoMethod && !checkoutStockAvailable) {
+  if (isAutoMethod && checkoutStockByDuration[duration.code] === false) {
     priceEl.classList.remove("duration-option-price--note");
     priceEl.classList.remove("duration-option-price--discounted");
     priceEl.classList.add("duration-option-price--unavailable");
@@ -479,11 +481,30 @@ function applyDurationPrice(priceEl, duration) {
 // вызывается при смене способа оплаты, чтобы цены сразу обновились без
 // необходимости заново открывать экран оформления.
 function refreshDurationPrices() {
+  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
   checkoutDurations.querySelectorAll(".duration-option").forEach((btn) => {
     const duration = DURATIONS.find((d) => d.code === btn.dataset.duration);
     if (!duration) return;
     applyDurationPrice(btn.querySelector(".duration-option-price"), duration);
+
+    // Тариф недоступен для клика, если он либо выключен статически
+    // (duration.available === false), либо (для Stars/xRocket) на него
+    // реально не осталось ключей — проверяется отдельно на каждый срок.
+    const outOfStock = isAutoMethod && checkoutStockByDuration[duration.code] === false;
+    const isSelectable = duration.available !== false && !outOfStock;
+    btn.classList.toggle("duration-option--disabled", !isSelectable);
+    btn.disabled = !isSelectable;
+    if (!isSelectable) {
+      btn.setAttribute("aria-disabled", "true");
+    } else {
+      btn.removeAttribute("aria-disabled");
+    }
   });
+
+  // Если выбранный сейчас тариф оказался недоступен (например, только что
+  // закончились ключи именно на этот срок) — блокируем кнопку "Купить" и
+  // здесь тоже, а не только в setPaymentMethod/openCheckout.
+  checkoutBuyBtn.disabled = isAutoMethod && !isDurationSellable(checkoutDuration);
 }
 
 function setCardStatus(statusEl, text, type = "") {
@@ -667,8 +688,9 @@ async function handleBuy(product, durationCode, buyBtn, buyBtnText, statusEl) {
     return;
   }
 
-  if (!checkoutStockAvailable) {
-    setCardStatus(statusEl, "Товар временно нет в наличии — все ключи раскуплены", "error");
+  const isAutoMethod = checkoutPaymentMethod === "stars" || checkoutPaymentMethod === "xrocket";
+  if (isAutoMethod && checkoutStockByDuration[durationCode] === false) {
+    setCardStatus(statusEl, "Этот тариф временно нет в наличии — ключи на этот срок раскуплены", "error");
     return;
   }
 
@@ -840,11 +862,9 @@ function setPaymentMethod(method) {
 
   refreshAllPrices();
 
-  // Остаток ключей (ACCESS_KEYS) касается только Stars/xRocket — при
-  // переключении на них кнопка "Купить" блокируется, если ключи
-  // кончились; ручные способы (NFT/RU-карта/гривна) не зависят от склада.
-  const isAutoMethod = method === "stars" || method === "xrocket";
-  checkoutBuyBtn.disabled = isAutoMethod && !checkoutStockAvailable;
+  // Остаток ключей (Stars/xRocket) уже учтён внутри refreshAllPrices() ->
+  // refreshDurationPrices(), которая сама блокирует "Купить", если на
+  // выбранный сейчас тариф ключей нет — отдельно тут ничего не нужно.
 }
 
 // Обновляет текст кнопки ручной оплаты (NFT / RU карта). Для RU карты —
@@ -1044,38 +1064,37 @@ let checkoutProduct = null;
 let checkoutDuration = DURATIONS[0].code;
 let checkoutPromoCode = null;
 let checkoutDiscountPercent = 0;
-// Доступность ключей на складе (см. /stock_status в bot.py). true, пока не
-// доказано обратное — чтобы не мигать "нет в наличии" раньше времени, пока
-// ответ сервера ещё не пришёл.
-let checkoutStockAvailable = true;
+// Остаток ключей по каждому сроку отдельно (см. /stock_status в bot.py):
+// {"7d": true, "30d": true, "12m": false, ...}. Ключ отсутствует в
+// объекте, пока ответ сервера ещё не пришёл — тогда считаем, что ключи
+// есть, чтобы не мигать "нет в наличии" раньше времени.
+let checkoutStockByDuration = {};
 
-// Спрашивает у сервера, остались ли свободные ключи для товара. Не
+// Продаётся ли сейчас конкретный тариф через автоматические способы
+// оплаты (Stars/xRocket) — учитывает и статичный флаг "тариф выключен"
+// (duration.available в DURATIONS), и реальный остаток ключей именно
+// этого срока.
+function isDurationSellable(durationCode) {
+  const duration = DURATIONS.find((d) => d.code === durationCode);
+  if (!duration || duration.available === false) return false;
+  return checkoutStockByDuration[durationCode] !== false;
+}
+
+// Спрашивает у сервера остаток ключей по каждому сроку для товара. Не
 // блокирует открытие экрана оформления — вызывается уже после его показа,
-// и просто дорисовывает "нет в наличии" поверх, если ключи закончились.
-async function checkStockStatus(productId) {
+// и просто дорисовывает "нет в наличии" поверх нужных тарифов.
+async function fetchStockStatus(productId) {
   try {
     const response = await fetch(`/stock_status?product_id=${encodeURIComponent(productId)}`);
-    if (!response.ok) return true;
+    if (!response.ok) return {};
     const data = await response.json();
-    return data.available !== false;
+    return data.durations || {};
   } catch (err) {
     // Если ручка недоступна (например, старый бэкенд) — не блокируем
     // покупку из-за сетевой ошибки, реальную проверку всё равно делает
     // сервер при создании инвойса.
-    return true;
+    return {};
   }
-}
-
-// Перекрашивает все ещё "доступные по конфигу" тарифы в "Нет в наличии",
-// когда реальный склад ключей (ACCESS_KEYS в bot.py) опустел, и блокирует
-// кнопки покупки — прямо на экране оформления, до попытки оплаты.
-// Показывает "нет в наличии" и блокирует покупку только для автоматических
-// способов оплаты (Stars, xRocket) — они выдают ключ сразу из ACCESS_KEYS.
-// NFT, RU-карта и гривна оформляются вручную владельцем/администратором и
-// не зависят от остатка ключей на складе, поэтому их не трогаем.
-function applyStockUnavailableUI() {
-  refreshDurationPrices();
-  checkoutBuyBtn.disabled = true;
 }
 
 function openCheckout(product, prefillPromoCode) {
@@ -1085,7 +1104,7 @@ function openCheckout(product, prefillPromoCode) {
   checkoutDuration = DURATIONS[0].code;
   checkoutPromoCode = null;
   checkoutDiscountPercent = 0;
-  checkoutStockAvailable = true;
+  checkoutStockByDuration = {};
   checkoutPromoInput.value = "";
   checkoutPromoApply.textContent = "Применить";
   checkoutPromoApply.classList.remove("promo-apply-btn--applied");
@@ -1129,14 +1148,15 @@ function openCheckout(product, prefillPromoCode) {
 
   switchView("checkout");
 
-  // Проверяем реальный остаток ключей уже после того, как экран показан —
-  // если ключи закончились, дорисовываем "Нет в наличии" поверх тарифов.
-  checkStockStatus(product.id).then((available) => {
-    checkoutStockAvailable = available;
+  // Проверяем реальный остаток ключей по каждому сроку уже после того, как
+  // экран показан — если на какой-то срок ключи закончились, дорисовываем
+  // "Нет в наличии" именно на нём, не трогая остальные тарифы.
+  fetchStockStatus(product.id).then((durations) => {
+    checkoutStockByDuration = durations;
     // Пользователь мог уже уйти с этого товара, пока ответ шёл — не
     // перекрашиваем чужой экран.
-    if (!available && checkoutProduct === product) {
-      applyStockUnavailableUI();
+    if (checkoutProduct === product) {
+      refreshDurationPrices();
     }
   });
 
